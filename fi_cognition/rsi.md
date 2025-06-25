@@ -2,7 +2,7 @@
 
 - what's rsi?
 
-rsi (Relative Strength Index) is a momentum indicator taht measures the speed and change of price movements, oscillating between 0 and 100.
+rsi (Relative Strength Index) is a momentum indicator that measures the speed and change of price movements, oscillating between 0 and 100.
 The RSI can help traders identify potential entry and exit points by looking for divergences and failure swings.
 
 
