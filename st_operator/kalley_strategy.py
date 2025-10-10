@@ -40,7 +40,7 @@ def kellly_strategy_continues(p_matrix,b_matrix):
 
     # 对每个位置计算加权平均
     for i in range(len(p_matrix)):
-        if i==0 or b_matrix[i]<0:
+        if b_matrix[i]<0:  # 刚开始不清楚情况保守策略
             result[i] = 0
         else:
             tem = kalley1(p_matrix[i],b_matrix[i]*10)
@@ -60,16 +60,15 @@ def kellly_strategy_continues2(p_matrix,b_matrix):
 
     # 对每个位置计算加权平均
     for i in range(len(p_matrix)):
-        if i==0 or b_matrix[i]<0:
+        if b_matrix[i]<0:  # 刚开始不清楚情况保守策略
             result[i] = 0
+        tem = kalley2(p_matrix[i],b_matrix[i]*10)
+        if tem<0:
+            result[i] = 0
+        elif tem<1:
+            result[i] = tem
         else:
-            tem = kalley2(p_matrix[i],b_matrix[i]*10)
-            if tem<0:
-                result[i] = 0
-            elif tem<1:
-                result[i] = tem
-            else:
-                result[i] = 1
+            result[i] = 1
     return result
 
 def kalley1(p,b):
@@ -80,6 +79,8 @@ def kalley2(p,r):
     """ 在 f(p) = [ p * r_win(p) + (1-p) * r_loss(p) ] / [ - r_win(p) * r_loss(p) ]，
     零和博弈的凯莉 (2p-1)/r
     """
+    if r==0:
+        r=0.0001
     return (2*p-1)/r
 
 def kalley3(p,r):
@@ -89,33 +90,19 @@ def kalley3(p,r):
 
 
 def continuse_gain(kelly_weight,path,s0):
-    """"""
-    result = np.zeros_like(kelly_weight)
-    for i in range(len(kelly_weight)):
-        if i==0:
-            result[i]=s0*kelly_weight[i]*path[i]+s0*(1-kelly_weight[i])
+    """ 计算 assets """
+    result = np.zeros(len(path)+1)
+    for i in range(len(result)):
+        if i<2:
+            result[i]=s0
         else:
-            result[i]=result[i-1]*kelly_weight[i]*(1+path[i])+result[i-1]*(1-kelly_weight[i])
+            result[i]=result[i-1]*kelly_weight[i-2]*(1+path[i-1])+result[i-1]*(1-kelly_weight[i-2])
     return result
 
 
 
 
 if __name__ == "__main__":
-    # # 测试数据
-    # input_array = [1, 2, 3, 4, 5, 6, 7, 8]
-    # window_size = 3
-    # custom_weights = [0.2, 0.3, 0.5]  # 自定义权重
-    #
-    # # 计算加权平均
-    # result = weighted_moving_average(input_array, window_size, custom_weights)
-    # print("输入数组:", input_array)
-    # print("窗口大小:", window_size)
-    # print("权重:", custom_weights)
-    # print("加权平均结果:", result)
-
-    # 模拟
-    # t, S_paths, v_paths, g_path = heston_simulate_euler(S0, v0, mu, kappa, theta, sigma, rho, T, N, num_sims)
     t = np.linspace(0, T, N)
     S_paths=[[],]
     S_paths[0]=close_prices
@@ -125,62 +112,52 @@ if __name__ == "__main__":
     gauss_d=test_adaptive_smoothing(S_paths[0])  # 高斯前向平滑预测
 
     mean_acc = np.ones_like(gauss_d[:-1])-np.abs(gauss_d[:-1] - S_paths[0][1:])*5 / S_paths[0][1:]
-    mean_slip_accurance = weighted_moving_average(mean_acc, 4, [0.2, 0.2, 0.25, 0.35]) # 准确率估算
+    mean_slip_accurance = test_adaptive_smoothing(mean_acc,s=1) # 准确率估算
     mean_slip_accurance=np.clip(mean_slip_accurance,0,1) # 准确率范围修正
     # shift_s=shift_right_fill(S_paths[0],1,S0)
-    gain_loss_p=(gauss_d-S_paths[0]) / S_paths[0] # 预估涨幅计算
+    gain_loss_p=(gauss_d[1:]-gauss_d[:-1]) / gauss_d[:-1] # 实际和预测比较计算预估涨幅
     gain_loss_p=np.clip(gain_loss_p,-0.1,0.1)
     kelly_weights=kellly_strategy_continues2(mean_slip_accurance,gain_loss_p)
     gain_loss_r=(S_array[1:]-S_array[:-1])/ S_array[:-1]  # 实际涨幅计算
     assets=continuse_gain(kelly_weights,gain_loss_r,S0)
 
-    with open('kelly_weights2.txt', 'w') as f:
+    with open('kelly_weights1.txt', 'w') as f:
         f.write("kelly_weight\tgain_loss_r\tmean_slip_accurance\tgain_loss_p\tS_paths[0]\tassets\n")
-        for i in range(len(kelly_weights)):
-            if i==0:
+        for i in range(len(S_paths[0])):
+            if i<1:
                 f.write("{:<10s}{:<10s}{:<10s}{:<10s}{:<10.5f}{:<10.5f}\n".format(
-                    "---", "---", "---", '---', S_paths[0][i], assets[i]))
+                    "---", "---", "---", '---', S_paths[0][i], S_paths[0][0]))
             else:
                 f.write("{:<10.5f}{:<10.5f}{:<10.5f}{:<10.5f}{:<10.5f}{:<10.5f}\n".format(
-                    kelly_weights[i-1], gain_loss_r[i-1], mean_slip_accurance[i-1], gain_loss_p[i-1], S_paths[0][i], assets[i]))
-        f.write("{:<10.5f}{:<10s}{:<10.5f}{:<10.5f}{:<10s}{:<10s}\n".format(
-                kelly_weights[i], '---', mean_slip_accurance[i], gain_loss_p[i], '---', '---'))
+                    kelly_weights[i-2], gain_loss_r[i-1], mean_slip_accurance[i-2], gain_loss_p[i-1], S_paths[0][i], assets[i-1]))
+        f.write("{:<10.5f}{:<10s}{:<10.5f}{:<10s}({:^10.5f}){:<10s}\n".format(
+                kelly_weights[len(S_paths[0])-2], '---', mean_slip_accurance[len(S_paths[0])-2], '---', gauss_d[len(S_paths[0])-1], '---'))
 
 
 
 
-    # # # 绘图 - 价格路径
-    # fig,(ax1,ax2)=plt.subplots(2, 1, figsize=(12, 8))
-    # # plt.figure(figsize=(12, 8))
-    # # plt.subplot(3, 1, 1)
-    # for i in range(num_sims):
-    #     ax1.plot(t, S_paths[0], lw=1,label='S_paths')
-    # ax1.set_title('Heston Model')
-    # # ax1.set_ylabel('Price')
-    # ax1.grid(True)
-    # #
-    # # # 绘图 - 方差路径
-    #
-    # # for i in range(num_sims):
-    # #     ax1.plot(t, c, lw=1,label='c')
-    # # # plt.title('Heston Model - Simulated Variance Paths')
-    # # # plt.xlabel('Time (Years)')
-    # # # plt.ylabel('Variance')
-    # # plt.grid(True)
-    #
-    # # plt.subplot(3, 1, 3)
-    # for i in range(num_sims):
-    #     ax1.plot(t, gauss_d, lw=1,label='gauss_d')
-    #
-    # for i in range(num_sims):
-    #     ax2.plot(t, assets, lw=1,label='assets')
-    # plt.title('gauss')
-    # plt.xlabel('Time (Years)')
-    # plt.ylabel('Variance')
-    # plt.grid(True)
-    # plt.legend()
-    # plt.tight_layout()
-    # plt.show()
+    # # 绘图 - 价格路径
+    fig,(ax1,ax2)=plt.subplots(2, 1, figsize=(12, 8))
+    # plt.figure(figsize=(12, 8))
+    # plt.subplot(3, 1, 1)
+    for i in range(num_sims):
+        ax1.plot(t, S_paths[0], lw=1,label='S_paths')
+    ax1.set_title('Heston Model')
+    ax1.set_ylabel('Price')
+    ax1.grid(True)
+
+    for i in range(num_sims):
+        ax1.plot(t+T/N, gauss_d, lw=1,label='gauss_d')
+
+    for i in range(num_sims):
+        ax2.plot(t, assets, lw=1,label='assets')
+    plt.title('gauss')
+    plt.xlabel('Time (Years)')
+    plt.ylabel('Variance')
+    plt.grid(True)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
 
 
 

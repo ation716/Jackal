@@ -98,13 +98,13 @@ def shift_right_fill(arr, shift, fill_value=0):
     result[shift:] = arr[:-shift]
     return result
 
-def test_adaptive_smoothing(arr):
+def test_adaptive_smoothing(arr,s=3):
     # 应用自适应平滑
     smoother = AdaptiveForwardGaussianSmoother(
         min_sigma=0.3,
         max_sigma=2.0,
         base_window_size=7,
-        sensitivity=2
+        sensitivity=s
     )
 
     array_B, array_Bo,sigmas, windows = smoother.smooth_array(arr)

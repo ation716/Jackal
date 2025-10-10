@@ -58,13 +58,13 @@ class ChipDistributionAnalyzer:
         trade_date	str	Y	交易日期
         his_low	float	Y	历史最低价
         his_high	float	Y	历史最高价
-        cost_5pct	float	Y	5分位成本
-        cost_15pct	float	Y	15分位成本
-        cost_50pct	float	Y	50分位成本
-        cost_85pct	float	Y	85分位成本
-        cost_95pct	float	Y	95分位成本
-        weight_avg	float	Y	加权平均成本
-        winner_rate	float	Y	胜率
+            cost_5pct	float	Y	5分位成本
+            cost_15pct	float	Y	15分位成本
+            cost_50pct	float	Y	50分位成本
+            cost_85pct	float	Y	85分位成本
+            cost_95pct	float	Y	95分位成本
+            weight_avg	float	Y	加权平均成本
+            winner_rate	float	Y	胜率
         """
         try:
             # 获取筹码分布数据
