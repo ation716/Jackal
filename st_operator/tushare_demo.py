@@ -114,14 +114,19 @@ def demo_tushare():
     analyzer = ChipDistributionAnalyzer()
 
     # 获取贵州茅台的数据
-    df = analyzer.get_stock_chip_distribution(
-        ts_code="002115.SZ",
-        start_date="20250919",
-        end_date="20250929"
+    df1 = analyzer.get_stock_chip_distribution(
+        ts_code="601162.SH",
+        start_date="20240924",
+        end_date="20251010"
     )
+    df2=analyzer.get_daily(
+        ts_code="601162.SH",
+        start_date="20240924",
+        end_date="20251010")
 
-
-    return df
+    combined_df = pd.concat([df1, df2], axis=1)
+    return combined_df
 
 if __name__ == '__main__':
     demo_tushare()
+    time.sleep(5)
