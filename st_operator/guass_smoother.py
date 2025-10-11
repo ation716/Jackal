@@ -155,64 +155,6 @@ class AdaptiveForwardGaussianSmoother:
 
 
 
-# 测试函数
-def test_adaptive_smoothing():
-    # 生成测试数据：混合平稳段和波动段
-    np.random.seed(42)
-    n_points = 200
-    t = np.linspace(0, 4 * np.pi, n_points)
-
-    # 基础信号 + 噪声 + 突发波动
-    base_signal = np.sin(t) * 2
-    noise = np.random.normal(0, 0.5, n_points)
-
-    # 添加一些突发波动
-    spikes = np.zeros(n_points)
-    spikes[50:55] = 4.0  # 第一个尖峰
-    spikes[120:125] = -3.0  # 第二个尖峰
-    spikes[180:185] = 5.0  # 第三个尖峰
-
-    array_A = base_signal + noise + spikes
-
-    # 应用自适应平滑
-    smoother = AdaptiveForwardGaussianSmoother(
-        min_sigma=0.3,
-        max_sigma=2.0,
-        base_window_size=7,
-        sensitivity=10
-    )
-
-    array_B,array_Bo, sigmas, windows = smoother.smooth_array(array_A)
-
-    # 绘制结果
-    plt.figure(figsize=(12, 10))
-
-    plt.subplot(3, 1, 1)
-    plt.plot(array_A, 'b-', alpha=0.7, label='原始数据 A')
-    plt.plot(array_B, 'r-', linewidth=2, label='平滑后数据 B')
-    plt.legend()
-    plt.title('自适应前向高斯平滑结果')
-    plt.grid(True)
-
-    plt.subplot(3, 1, 2)
-    plt.plot(sigmas, 'g-')
-    plt.title('自适应调整的 Sigma 参数')
-    plt.ylabel('Sigma')
-    plt.grid(True)
-
-    plt.subplot(3, 1, 3)
-    plt.plot(windows, 'm-')
-    plt.title('自适应调整的窗口大小')
-    plt.ylabel('窗口大小')
-    plt.xlabel('数据点索引')
-    plt.grid(True)
-
-    plt.tight_layout()
-    plt.show()
-
-    return array_A, array_B, sigmas, windows
-
-
 # 运行测试
 if __name__ == "__main__":
-    test_adaptive_smoothing()
+    pass
