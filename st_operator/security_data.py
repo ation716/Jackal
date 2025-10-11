@@ -22,9 +22,36 @@ amount	float	成交额 （千元）
 """
 
 import tushare as ts
+import akshare as ak
 import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
+from enum import Enum
+
+
+class SecurityFileds(Enum):
+    STOCK_CODE = "ts_code"
+    TRADE_DATE = "trade_date"
+    HISTORICAL_LOW = "his_low"
+    HISTORICAL_HIGH = "his_high"
+    COST_5TH_PERCENTILE = "cost_5pct"
+    COST_15TH_PERCENTILE = "cost_15pct"
+    COST_50TH_PERCENTILE = "cost_50pct"
+    COST_85TH_PERCENTILE = "cost_85pct"
+    COST_95TH_PERCENTILE = "cost_95pct"
+    WEIGHTED_AVERAGE_COST = "weight_avg"
+    WIN_RATE = "winner_rate"
+    TURNOVER_RATE ='换手率'
+    OPEN='open'
+    CLOSE='close'
+    HIGH='high'
+    LOW='low'
+    VOLUME='vol'  # 单位手
+    AMOUNT='amount'  # 单位千元
+    CHANGE='change'
+    PCT_CHG='pct_chg'
+
+
 
 
 class ChipDistributionAnalyzer:
@@ -37,7 +64,7 @@ class ChipDistributionAnalyzer:
             token = "1bf9b910cdda6f0cd856f55b97c1c1419860237f7be8156aacac3259"
         self.pro = ts.pro_api(token)
 
-    def get_daily(self,ts_code,start_date,end_date):
+    def get_daily_tu(self,ts_code,start_date,end_date):
         """获取日线行情
         详情参考 https://tushare.pro/document/2?doc_id=27
         """
@@ -54,17 +81,17 @@ class ChipDistributionAnalyzer:
         """
         获取个股筹码分布数据
         :return:
-        ts_code	str	Y	股票代码
-        trade_date	str	Y	交易日期
-        his_low	float	Y	历史最低价
-        his_high	float	Y	历史最高价
-        cost_5pct	float	Y	5分位成本
-        cost_15pct	float	Y	15分位成本
-        cost_50pct	float	Y	50分位成本
-        cost_85pct	float	Y	85分位成本
-        cost_95pct	float	Y	95分位成本
-        weight_avg	float	Y	加权平均成本
-        winner_rate	float	Y	胜率
+        ts_code	str	Y
+        trade_date	str	Y
+        his_low	float	Y
+        his_high	float	Y
+        cost_5pct	float	Y
+        cost_15pct	float	Y
+        cost_50pct	float	Y
+        cost_85pct	float	Y
+        cost_95pct	float	Y
+        weight_avg	float	Y
+        winner_rate	float	Y
         """
         try:
             # 获取筹码分布数据
@@ -106,7 +133,15 @@ class ChipDistributionAnalyzer:
             print(f"获取数据失败: {e}")
             return None
 
-
+    def get_daily_ak(self,symbol,start_date,end_date):
+        # 获取股票历史数据
+        symbol = symbol.replace(".SH","")
+        df = ak.stock_zh_a_hist(symbol=symbol,
+                                period='daily',
+                                start_date=start_date,
+                                end_date=end_date,
+                                adjust="")        # 不复权
+        return df
 # 使用示例
 def demo_tushare():
     # 需要先注册获取token：https://tushare.pro/register
@@ -128,5 +163,17 @@ def demo_tushare():
     return combined_df
 
 if __name__ == '__main__':
-    demo_tushare()
+    # demo_tushare()
+    ts_code = "601162.SH"
+    start_date = "20240924"
+    end_date = "20251010"
+    analyzer = ChipDistributionAnalyzer()
+    df1=analyzer.get_daily_ak(ts_code,start_date,end_date)
+    df2=analyzer.get_stock_chip_distribution(ts_code,start_date,end_date)
+    df3=analyzer.get_daily_tu(ts_code,start_date,end_date)
+    df2=df2.iloc[::-1].reset_index(drop=True)
+    df3=df3.iloc[::-1].reset_index(drop=True)
+    combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
+
+
     time.sleep(5)
