@@ -426,22 +426,23 @@ def run_prediction_simulation(full_data):
 # results = example_usage()
 
 if __name__ == '__main__':
-    # ts_code = "601162.SH"
-    # start_date = "20240924"
-    # end_date = "20251010"
-    # analyzer = ChipDistributionAnalyzer()
-    # df1 = analyzer.get_daily_ak(ts_code, start_date, end_date)
-    # df2 = analyzer.get_stock_chip_distribution(ts_code, start_date, end_date)
-    # df3 = analyzer.get_daily_tu(ts_code, start_date, end_date)
-    # df2 = df2.iloc[::-1].reset_index(drop=True)
-    # df3 = df3.iloc[::-1].reset_index(drop=True)
-    # combined_df = pd.concat([df2, df3.iloc[:, 2:11], df1.iloc[:, 11:12]], axis=1)
-    # combined_df.to_csv('data_demo.csv',
-    #           index=False,  # 不保存索引
-    #           encoding='utf_8_sig',  # 支持中文
-    #           sep=',')  # 分隔符
-    df = pd.read_csv('data_demo.csv',
-                     encoding='utf_8_sig',  # 中文编码
-                     parse_dates=['trade_date'])  # 解析日期列
-    # df['trade_date']=pd.to_datetime(df['trade_date'].astype(str), format='%Y%m%d')
-    results = run_prediction_simulation(df)
+    ts_code = "002115.SZ"
+    start_date = "20240924"
+    end_date = "20251015"
+    analyzer = ChipDistributionAnalyzer()
+    df1 = analyzer.get_daily_ak(ts_code, start_date, end_date)
+    df1 = df1.rename(columns={'换手率': 'turnover_rate'})
+    df2 = analyzer.get_stock_chip_distribution(ts_code, start_date, end_date)
+    df3 = analyzer.get_daily_tu(ts_code, start_date, end_date)
+    df2 = df2.iloc[::-1].reset_index(drop=True)
+    df3 = df3.iloc[::-1].reset_index(drop=True)
+    combined_df = pd.concat([df2, df3.iloc[:, 2:11], df1.iloc[:, 11:12]], axis=1)
+    combined_df.to_csv('../results/swtx.csv',
+              index=False,  # 不保存索引
+              encoding='utf_8_sig',  # 支持中文
+              sep=',')  # 分隔符
+    # df = pd.read_csv('data_demo.csv',
+    #                  encoding='utf_8_sig',  # 中文编码
+    #                  parse_dates=['trade_date'])  # 解析日期列
+    # # df['trade_date']=pd.to_datetime(df['trade_date'].astype(str), format='%Y%m%d')
+    # results = run_prediction_simulation(df)

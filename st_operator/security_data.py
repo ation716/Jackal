@@ -135,13 +135,43 @@ class ChipDistributionAnalyzer:
 
     def get_daily_ak(self,symbol,start_date,end_date):
         # 获取股票历史数据
-        symbol = symbol.replace(".SH","")
+        if symbol.endswith(".SH"):
+            symbol = symbol.replace(".SH","")
+        if symbol.endswith(".SZ"):
+            symbol = symbol.replace(".SZ","")
         df = ak.stock_zh_a_hist(symbol=symbol,
                                 period='daily',
                                 start_date=start_date,
                                 end_date=end_date,
                                 adjust="")        # 不复权
         return df
+
+    def get_daily_limit_up(self,date):
+        column_mapping = {
+            '序号': 'serial_number',
+            '代码': 'symbol',
+            '名称': 'name',
+            '涨跌幅': 'change_percent',
+            '最新价': 'latest_price',
+            '成交额': 'turnover',
+            '流通市值': 'circulating_market_cap',
+            '总市值': 'total_market_cap',
+            '换手率': 'turnover_rate',
+            '封板资金': 'sealing_capital',
+            '首次封板时间': 'first_sealing_time',
+            '最后封板时间': 'last_sealing_time',
+            '炸板次数': 'board_broken_times',
+            '涨停统计': 'limit_up_stats',
+            '连板数': 'continuous_boards',
+            '所属行业': 'industry'
+        }
+        df = ak.stock_zt_pool_em(date="20251015")
+        df = df.copy()
+        # 只转换存在的列名
+        existing_columns = {col: column_mapping[col] for col in df.columns if col in column_mapping}
+        df.rename(columns=existing_columns, inplace=True)
+        return df
+
 # 使用示例
 def demo_tushare():
     # 需要先注册获取token：https://tushare.pro/register
@@ -164,16 +194,17 @@ def demo_tushare():
 
 if __name__ == '__main__':
     # demo_tushare()
-    ts_code = "601162.SH"
-    start_date = "20240924"
-    end_date = "20251010"
+    # ts_code = "601162.SH"
+    # start_date = "20240924"
+    # end_date = "20251010"
+    # analyzer = ChipDistributionAnalyzer()
+    # df1=analyzer.get_daily_ak(ts_code,start_date,end_date)
+    # df2=analyzer.get_stock_chip_distribution(ts_code,start_date,end_date)
+    # df3=analyzer.get_daily_tu(ts_code,start_date,end_date)
+    # df2=df2.iloc[::-1].reset_index(drop=True)
+    # df3=df3.iloc[::-1].reset_index(drop=True)
+    # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
     analyzer = ChipDistributionAnalyzer()
-    df1=analyzer.get_daily_ak(ts_code,start_date,end_date)
-    df2=analyzer.get_stock_chip_distribution(ts_code,start_date,end_date)
-    df3=analyzer.get_daily_tu(ts_code,start_date,end_date)
-    df2=df2.iloc[::-1].reset_index(drop=True)
-    df3=df3.iloc[::-1].reset_index(drop=True)
-    combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-
-
+    df=analyzer.get_daily_limit_up("20251015")
+    print(df.tail())
     time.sleep(5)
