@@ -31,7 +31,7 @@ torch.manual_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
 
-DATA_FILE = "data.csv"   # if not present, script will synth data
+DATA_FILE = "lfsh.csv"   # if not present, script will synth data
 SEQ_LEN = 30             # 用前 30 天数据预测第 31 天
 INITIAL_TRAIN_DAYS = 180
 BATCH_SIZE = 32
@@ -49,17 +49,17 @@ REG_WEIGHT = 1.0           # 回归 loss 权重
 # Data loading / synthetic
 # -----------------------
 expected_cols = [
-    "date", "open", "close", "high", "low", "volume",
-    "cost_p5", "cost_p15", "cost_p50", "cost_p85", "cost_p95",
-    "weighted_cost", "win_rate"
+    "trade_date", "open", "close", "high", "low", "vol",
+    "cost_5pct", "cost_15pct", "cost_50pct", "cost_85pct", "cost_95pct",
+    "weight_avg", "winner_rate"
 ]
 
 if os.path.exists(DATA_FILE):
-    df = pd.read_csv(DATA_FILE, parse_dates=["date"])
+    df = pd.read_csv(DATA_FILE, parse_dates=["trade_date"])
     missing = [c for c in expected_cols if c not in df.columns]
     if missing:
-        raise ValueError(f"data.csv missing columns: {missing}")
-    df = df.sort_values("date").reset_index(drop=True)
+        raise ValueError(f"{DATA_FILE} missing columns: {missing}")
+    df = df.sort_values("trade_date").reset_index(drop=True)
 else:
     # 生成合成数据方便 demo
     n = 400
@@ -81,10 +81,10 @@ else:
     df = pd.DataFrame({
         "date": dates, "open": openp, "close": close, "high": high, "low": low, "volume": volume,
         "cost_p5": cost_p5, "cost_p15": cost_p15, "cost_p50": cost_p50, "cost_p85": cost_p85, "cost_p95": cost_p95,
-        "weighted_cost": weighted_cost, "win_rate": win_rate
+        "weight_cost": weighted_cost, "win_rate": win_rate
     })
 
-df = df[expected_cols].sort_values("date").reset_index(drop=True)
+df = df[expected_cols].sort_values("trade_date").reset_index(drop=True)
 
 # -----------------------
 # Feature engineering helper
@@ -96,11 +96,11 @@ def build_features(df):
     X["hl_range"] = (X["high"] - X["low"]) / X["open"]
     for lag in [1,2,3,5]:
         X[f"ret_lag_{lag}"] = X["return"].shift(lag).fillna(0)
-        X[f"vol_lag_{lag}"] = X["volume"].shift(lag).fillna(method="bfill")
+        X[f"vol_lag_{lag}"] = X["vol"].shift(lag).fillna(method="bfill")
     # percent distance to cost percentiles
-    for c in ["cost_p5","cost_p15","cost_p50","cost_p85","cost_p95","weighted_cost"]:
+    for c in ["cost_5pct","cost_15pct","cost_50pct","cost_85pct","cost_95pct","weight_avg"]:
         X[f"pd_{c}"] = (X["close"] - X[c]) / X[c]
-    X["weekday"] = X["date"].dt.weekday
+    X["weekday"] = X["trade_date"].dt.weekday
     # drop NA (early rows)
     X = X.fillna(method="bfill").reset_index(drop=True)
     return X
@@ -114,7 +114,7 @@ class SlidingWindowDataset(Dataset):
     def __init__(self, df, seq_len=SEQ_LEN):
         self.df = df.reset_index(drop=True)
         self.seq_len = seq_len
-        self.feature_cols = [c for c in df.columns if c not in ("date","close")]
+        self.feature_cols = [c for c in df.columns if c not in ("trade_date","close")]
         # target: tomorrow's return and up label
         self.targets = self._build_targets()
 
@@ -138,7 +138,7 @@ class SlidingWindowDataset(Dataset):
             "X": torch.tensor(Xwin, dtype=torch.float32),
             "ret": torch.tensor(float(target_row["ret_next"]), dtype=torch.float32),
             "up": torch.tensor(float(target_row["up_next"]), dtype=torch.float32),
-            "date": self.df.loc[end, "date"]
+            "trade_date": self.df.loc[end, "trade_date"]
         }
         return sample
 
@@ -191,7 +191,7 @@ def collate_fn(batch):
     X = torch.stack([b["X"] for b in batch], dim=0)
     ret = torch.stack([b["ret"] for b in batch], dim=0)
     up = torch.stack([b["up"] for b in batch], dim=0)
-    dates = [b["date"] for b in batch]
+    dates = [b["trade_date"] for b in batch]
     return {"X": X, "ret": ret, "up": up, "dates": dates}
 
 # prepare dataset
@@ -249,7 +249,7 @@ if len(initial_indices) > 0:
         if (epoch+1) % 10 == 0 or epoch == 0:
             print(f"[Init train] Epoch {epoch+1}/{EPOCHS_INIT}, loss={np.mean(epoch_losses):.6f}")
 
-# prepare replay buffer (store dicts: {"X": np.array, "ret":float, "up":float, "date":pd.Timestamp})
+# prepare replay buffer (store dicts: {"X": np.array, "ret":float, "up":float, "trade_date":pd.Timestamp})
 memory = deque(maxlen=MEMORY_MAXLEN)
 
 # fill memory initially with a subset of training data
@@ -261,7 +261,7 @@ def push_initial_memory(indices, max_items=MEMORY_MAXLEN//2):
             "X": sample["X"].numpy(),
             "ret": float(sample["ret"].item()),
             "up": float(sample["up"].item()),
-            "date": sample["date"]
+            "trade_date": sample["trade_date"]
         })
 push_initial_memory(initial_indices)
 
@@ -270,24 +270,24 @@ results = []
 model.eval()
 for idx in stream_indices:
     # 1) predict for sample idx
-    sample = dataset[idx]  # corresponds to target at date = sample["date"]
+    sample = dataset[idx]  # corresponds to target at date = sample["trade_date"]
     X_in = sample["X"].unsqueeze(0).to(DEVICE)  # (1, seq, f)
     with torch.no_grad():
         up_prob, ret_pred = model(X_in)
         up_p = float(up_prob.item())
         ret_p = float(ret_pred.item())
-    predict_date = sample["date"]  # predicted date (target date)
+    predict_date = sample["trade_date"]  # predicted date (target date)
     # the true labels are available in dataset.targets at idx+seq_len
     # but in our dataset sample["ret"], sample["up"] are already the true next-day values (for simulation)
     y_ret = float(sample["ret"].item())
     y_up = float(sample["up"].item())
 
     results.append({
-        "date": predict_date,
-        "pred_up_prob": up_p,
-        "pred_ret": ret_p,
-        "true_up": y_up,
-        "true_ret": y_ret
+        "trade_date": predict_date,
+        "pred_up_prob": up_p, # 上涨概率
+        "pred_ret": ret_p, # 期望收益率
+        "true_up": y_up, # 真实上涨
+        "true_ret": y_ret # 真实收益率
     })
 
     # 2) online update: add this sample to memory, then fine-tune with small batches (new + replay)
@@ -295,7 +295,7 @@ for idx in stream_indices:
         "X": sample["X"].numpy(),
         "ret": y_ret,
         "up": y_up,
-        "date": sample["date"]
+        "trade_date": sample["trade_date"]
     })
 
     # Fine-tune small steps
@@ -308,7 +308,7 @@ for idx in stream_indices:
             Xb = torch.tensor(np.stack([s["X"] for s in batch_samples]), dtype=torch.float32).to(DEVICE)
             rets = torch.tensor([s["ret"] for s in batch_samples], dtype=torch.float32).to(DEVICE)
             ups = torch.tensor([s["up"] for s in batch_samples], dtype=torch.float32).to(DEVICE)
-            dates_batch = [s["date"] for s in batch_samples]
+            dates_batch = [s["trade_date"] for s in batch_samples]
             current_date = max(dates_batch)
             weights = compute_time_weights(dates=dates_batch, current_date=current_date, lam=TIME_DECAY_LAMBDA)
             weights = torch.tensor(weights, dtype=torch.float32).to(DEVICE)
@@ -326,7 +326,7 @@ for idx in stream_indices:
 # -----------------------
 # Evaluation & Save
 # -----------------------
-res_df = pd.DataFrame(results).sort_values("date").reset_index(drop=True)
+res_df = pd.DataFrame(results).sort_values("trade_date").reset_index(drop=True)
 # metrics
 auc = roc_auc_score(res_df["true_up"], res_df["pred_up_prob"]) if len(res_df["true_up"].unique()) > 1 else float("nan")
 ll = log_loss(res_df["true_up"], np.clip(res_df["pred_up_prob"], 1e-6, 1-1e-6)) if len(res_df["true_up"].unique()) > 1 else float("nan")
@@ -336,5 +336,5 @@ mae = mean_absolute_error(res_df["true_ret"], res_df["pred_ret"])
 print("Streaming Eval:")
 print(f"Samples: {len(res_df)}  AUC: {auc:.4f}  LogLoss: {ll:.6f}  RMSE(ret): {rmse:.6f}  MAE(ret): {mae:.6f}")
 
-res_df.to_csv("transformer_prob_return_results.csv", index=False)
+res_df.to_csv("../results/transformer_prob_return_results_lfsh.csv", index=False)
 print("Saved results to transformer_prob_return_results.csv")
