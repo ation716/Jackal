@@ -20,6 +20,7 @@ vol	float	成交量 （手）
 amount	float	成交额 （千元）
 
 """
+import time
 
 import tushare as ts
 import akshare as ak
@@ -62,6 +63,7 @@ class ChipDistributionAnalyzer:
         """
         if token is None:
             token = "1bf9b910cdda6f0cd856f55b97c1c1419860237f7be8156aacac3259"
+        ts.set_token(token)
         self.pro = ts.pro_api(token)
 
     def get_daily_tu(self,ts_code,start_date,end_date):
@@ -133,6 +135,17 @@ class ChipDistributionAnalyzer:
             print(f"获取数据失败: {e}")
             return None
 
+    def get_realtime_tick(self,ts_code):
+        """获取实时行情
+        """
+        try:
+            # 获取实时行情数据
+            df = ts.realtime_quote(ts_code=ts_code)
+            return df
+        except Exception as e:
+            print(f"获取数据失败: {e}")
+            return None
+
     def get_daily_ak(self,symbol,start_date,end_date):
         # 获取股票历史数据
         if symbol.endswith(".SH"):
@@ -147,6 +160,7 @@ class ChipDistributionAnalyzer:
         return df
 
     def get_daily_limit_up(self,date):
+        """"""
         column_mapping = {
             '序号': 'serial_number',
             '代码': 'symbol',
@@ -171,6 +185,47 @@ class ChipDistributionAnalyzer:
         existing_columns = {col: column_mapping[col] for col in df.columns if col in column_mapping}
         df.rename(columns=existing_columns, inplace=True)
         return df
+
+    def get_main_business_th(self,symbol):
+        """
+        :return
+        主营业务，
+        产品类型，
+        产品名称，
+        经营范围，
+        """
+        if symbol.endswith(".SH"):
+            symbol = symbol.replace(".SH","")
+        if symbol.endswith(".SZ"):
+            symbol = symbol.replace(".SZ","")
+        return ak.stock_zyjs_ths(symbol=symbol)
+
+    def get_main_business_dc(self,symbol):
+        """"""
+        if symbol.endswith(".SH"):
+            symbol = symbol.replace(".SH","")
+        if symbol.endswith(".SZ"):
+            symbol = symbol.replace(".SZ","")
+        return ak.stock_zygc_em(symbol=symbol)
+
+    def get_emotion(self):
+        return ak.stock_market_activity_legu()
+
+    def get_limit_up(self,date):
+        return ak.stock_zt_pool_em(date=date)
+
+    def get_strong(self,date):
+        return ak.stock_zt_pool_strong_em(date=date)
+
+    def get_price_crush(self,date):
+        return ak.stock_zt_pool_zbgc_em(date=date)
+
+    def get_limit_down(self,date):
+        return ak.stock_zt_pool_dtgc_em(date=date)
+
+    def get_daily_info(self,symbol):
+        return ak.stock_info_global_cls(symbol=symbol)
+
 
 # 使用示例
 def demo_tushare():
@@ -204,7 +259,18 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
+    date='20251029'
     analyzer = ChipDistributionAnalyzer()
-    df=analyzer.get_daily_limit_up("20251015")
-    print(df.tail())
-    time.sleep(5)
+    limit_up=analyzer.get_limit_up(date=date)
+    strong=analyzer.get_strong(date=date)
+    crush=analyzer.get_price_crush(date=date)
+    limit_down=analyzer.get_limit_down(date=date)
+    info=analyzer.get_daily_info('全部')
+    time.sleep(8)
+    # df=analyzer.get_daily_limit_up("20251015")
+    # df=analyzer.get_main_business("601162")
+    # print(df.tail())
+    # for _ in range(100):
+    #     stock_analyst_rank_em_df = ak.stock_market_activity_legu()
+    #     print(stock_analyst_rank_em_df.iloc[0,1],stock_analyst_rank_em_df.iloc[4,1],stock_analyst_rank_em_df.iloc[0,1],)
+    #     time.sleep(5)
