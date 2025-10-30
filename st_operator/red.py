@@ -19,8 +19,8 @@ def run_schedule(interval_minutes=5):
 
     # 定义时间区间
     start_time = datetime.datetime.combine(today, datetime.time(9, 30))
-    end_time = datetime.datetime.combine(today, datetime.time(15, 0))
-    middle_time1 = datetime.datetime.combine(today, datetime.time(11, 30))
+    end_time = datetime.datetime.combine(today, datetime.time(15, 0,8))
+    middle_time1 = datetime.datetime.combine(today, datetime.time(11, 30,8))
     middle_time2 = datetime.datetime.combine(today, datetime.time(13, 00))
 
     # 如果当前时间在区间之外
@@ -51,7 +51,7 @@ def run_schedule(interval_minutes=5):
 
     while True:
         now = datetime.datetime.now()
-        if now >= end_time:
+        if now > end_time:
             print("到达15:00，停止执行。")
             break
 
@@ -79,7 +79,7 @@ def run_schedule(interval_minutes=5):
                 break
 
         time_diff = next_run-now
-        seconds = max(time_diff.total_seconds(),5)
+        seconds = max(time_diff.total_seconds(),10)
         time.sleep(seconds)
 
 if __name__ == "__main__":

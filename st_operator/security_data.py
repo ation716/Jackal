@@ -78,6 +78,21 @@ class ChipDistributionAnalyzer:
             print(f"获取数据失败: {e}")
             return None
 
+    def get_all_pec(self,ts_code,start_date,end_date):
+        """
+        获取所有筹码分布
+        :return:
+        """
+
+        try:
+            # 获取日线行情
+            df = self.pro.cyq_chips(ts_code=ts_code, start_date=start_date, end_date=end_date)
+            return df
+        except Exception as e:
+            print(f"获取数据失败: {e}")
+            return None
+
+
 
     def get_stock_chip_distribution(self, ts_code, start_date, end_date):
         """
@@ -249,7 +264,7 @@ def demo_tushare():
 
 if __name__ == '__main__':
     # demo_tushare()
-    # ts_code = "601162.SH"
+    ts_code = "002171.SZ"
     # start_date = "20240924"
     # end_date = "20251010"
     # analyzer = ChipDistributionAnalyzer()
@@ -259,13 +274,17 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-    date='20251029'
+    date='20251104'
+    start_date='20251001'
+    end_date='20251103'
     analyzer = ChipDistributionAnalyzer()
-    limit_up=analyzer.get_limit_up(date=date)
-    strong=analyzer.get_strong(date=date)
-    crush=analyzer.get_price_crush(date=date)
-    limit_down=analyzer.get_limit_down(date=date)
-    info=analyzer.get_daily_info('全部')
+    # limit_up=analyzer.get_limit_up(date=date)
+    # strong=analyzer.get_strong(date=date)
+    # crush=analyzer.get_price_crush(date=date)
+    # limit_down=analyzer.get_limit_down(date=date)
+    # info=analyzer.get_daily_info('全部')
+    info=analyzer.get_all_pec(ts_code,start_date,end_date)
+    info.to_csv('tem2',mode="a", index=False, header=False)
     time.sleep(8)
     # df=analyzer.get_daily_limit_up("20251015")
     # df=analyzer.get_main_business("601162")

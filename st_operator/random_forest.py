@@ -426,9 +426,9 @@ def run_prediction_simulation(full_data):
 # results = example_usage()
 
 if __name__ == '__main__':
-    ts_code = "000555.SZ"
+    ts_code = "603122.SH"
     start_date = "20240924"
-    end_date = "20251030"
+    end_date = "20251104"
     analyzer = ChipDistributionAnalyzer()
     df1 = analyzer.get_daily_ak(ts_code, start_date, end_date)
     df1 = df1.rename(columns={'换手率': 'turnover_rate'})
@@ -437,7 +437,7 @@ if __name__ == '__main__':
     df2 = df2.iloc[::-1].reset_index(drop=True)
     df3 = df3.iloc[::-1].reset_index(drop=True)
     combined_df = pd.concat([df2, df3.iloc[:, 2:11], df1.iloc[:, 11:12]], axis=1)
-    combined_df.to_csv('../results/szxx.csv',
+    combined_df.to_csv('../results/stacks/hfzg.csv',
               index=False,  # 不保存索引
               encoding='utf_8_sig',  # 支持中文
               sep=',')  # 分隔符
