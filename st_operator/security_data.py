@@ -79,6 +79,10 @@ class ChipDistributionAnalyzer:
         """获取日线行情
         详情参考 https://tushare.pro/document/2?doc_id=27
         """
+        if not ts_code.startswith('60'):
+            ts_code = ts_code+'.SH'
+        if ts_code.startswith('00'):
+            ts_code = ts_code+'.SZ'
         try:
             # 获取日线行情
             ts_code = self.normal_ts_code(ts_code)
@@ -120,6 +124,10 @@ class ChipDistributionAnalyzer:
         weight_avg	float	Y
         winner_rate	float	Y
         """
+        if not ts_code.startswith('60'):
+            ts_code = ts_code+'.SH'
+        if ts_code.startswith('00'):
+            ts_code = ts_code+'.SZ'
         try:
             # 获取筹码分布数据
             ts_code = self.normal_ts_code(ts_code)
