@@ -66,12 +66,22 @@ class ChipDistributionAnalyzer:
         ts.set_token(token)
         self.pro = ts.pro_api(token)
 
+    def normal_ts_code(self,ts_code):
+        """标准化股票代码"""
+        if ts_code.startswith('60'):
+            return ts_code+'.SH'
+        elif ts_code.startswith('00'):
+            return ts_code+'.SZ'
+        else:
+            return ts_code
+
     def get_daily_tu(self,ts_code,start_date,end_date):
         """获取日线行情
         详情参考 https://tushare.pro/document/2?doc_id=27
         """
         try:
             # 获取日线行情
+            ts_code = self.normal_ts_code(ts_code)
             df = self.pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
             return df
         except Exception as e:
@@ -112,6 +122,7 @@ class ChipDistributionAnalyzer:
         """
         try:
             # 获取筹码分布数据
+            ts_code = self.normal_ts_code(ts_code)
             df = self.pro.cyq_perf(ts_code=ts_code, start_date=start_date, end_date=end_date)
             return df
         except Exception as e:
@@ -274,17 +285,17 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-    date='20251104'
+    date='20251106'
     start_date='20251001'
-    end_date='20251103'
+    end_date='20251105'
     analyzer = ChipDistributionAnalyzer()
-    # limit_up=analyzer.get_limit_up(date=date)
+    limit_up=analyzer.get_limit_up(date=date)
     # strong=analyzer.get_strong(date=date)
-    # crush=analyzer.get_price_crush(date=date)
+    crush=analyzer.get_price_crush(date=date)
     # limit_down=analyzer.get_limit_down(date=date)
     # info=analyzer.get_daily_info('全部')
-    info=analyzer.get_all_pec(ts_code,start_date,end_date)
-    info.to_csv('tem2',mode="a", index=False, header=False)
+    # info=analyzer.get_all_pec(ts_code,start_date,end_date)
+    # info.to_csv('tem2',mode="a", index=False, header=False)
     time.sleep(8)
     # df=analyzer.get_daily_limit_up("20251015")
     # df=analyzer.get_main_business("601162")

@@ -22,12 +22,13 @@ id_dict={
 }
 # id_list=['600203','600776','600118','002115','603686','600580','603767','000981','600537','601162']
 
-id_list=['002171','603686']
-# cjxc,flm
+id_list=['603686','000572','600815','603122']
+# flm,hmqc,xggf,hfzg
 now = datetime.datetime.now()
 today = now.date()
 middle_time1 = datetime.datetime.combine(today, datetime.time(11, 30))
 middle_time2 = datetime.datetime.combine(today, datetime.time(13, 00))
+middle_time3 = datetime.datetime.combine(today, datetime.time(14, 30))
 
 def gen_symbols(id_list):
     symbols=','.join([f'{id}.SZ' for id in id_list if id.startswith('00')])+','+','.join([f'{id}.SH' for id in id_list if id.startswith('60')])
@@ -41,6 +42,7 @@ volume_avg=[0 for _ in range(len(id_list))]
 time_flag=False
 attention_flag=False
 attention_rate=0
+volume_treshold=5000
 with open(filename,'a',encoding='utf-8',newline='') as f:
     writer = csv.writer(f)
 
@@ -83,14 +85,14 @@ with open(filename,'a',encoding='utf-8',newline='') as f:
                 print()
                 buy_list=[df.iloc[i,13],df.iloc[i,15],df.iloc[i,17],df.iloc[i,19],df.iloc[i,21]]
                 sel_list=[df.iloc[i,23],df.iloc[i,25],df.iloc[i,27],df.iloc[i,29],df.iloc[i,31]]
-                if max(buy_list)>0.39*sum(buy_list) and max(buy_list)>10*min(buy_list) and max(buy_list)>5000:
+                if max(buy_list)>0.39*sum(buy_list) and max(buy_list)>10*min(buy_list) and max(buy_list)>volume_treshold:
                     if attention_flag:
                         writer.writerow([df.iloc[i,1],datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),df.iloc[i,6],*buy_list,*sel_list,f"attention {attention_rate:.2f}"])
                         attention_flag=False
                     else:
                         writer.writerow([df.iloc[i,1],datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),df.iloc[i,6],*buy_list,*sel_list])
                     print(f'record {buy_list,sel_list,t}')
-                elif max(sel_list)>0.39*sum(sel_list) and max(sel_list)>10*min(sel_list) and max(sel_list)>5000:
+                elif max(sel_list)>0.39*sum(sel_list) and max(sel_list)>10*min(sel_list) and max(sel_list)>volume_treshold:
                     if attention_flag:
                         writer.writerow([df.iloc[i, 1], datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"),df.iloc[i,6],*buy_list, *sel_list,f"attention {attention_rate:.2f}"])
                         attention_flag=False
@@ -109,6 +111,8 @@ with open(filename,'a',encoding='utf-8',newline='') as f:
             print('middle time')
             time_diff=middle_time2-now
             time.sleep(time_diff.total_seconds())
+        if now>middle_time3:
+            volume_treshold=8000
 
 
 # 需要看出承压能力

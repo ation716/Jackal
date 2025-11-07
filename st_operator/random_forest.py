@@ -426,21 +426,37 @@ def run_prediction_simulation(full_data):
 # results = example_usage()
 
 if __name__ == '__main__':
-    ts_code = "603122.SH"
+    code_list={
+        # 'hmqc':'000572',
+        # 'flm':'603686',
+        # 'cjxc':'002171',
+        # 'hfzg':'602122',
+        # 'ycm':'002101',
+        # 'lszz':'603169',
+        # 'hjhs':'603616',
+        'xggf':'600815'
+    }
+    # ts_code = "603122.SH"
     start_date = "20240924"
-    end_date = "20251104"
+    end_date = "20251106"
     analyzer = ChipDistributionAnalyzer()
-    df1 = analyzer.get_daily_ak(ts_code, start_date, end_date)
-    df1 = df1.rename(columns={'换手率': 'turnover_rate'})
-    df2 = analyzer.get_stock_chip_distribution(ts_code, start_date, end_date)
-    df3 = analyzer.get_daily_tu(ts_code, start_date, end_date)
-    df2 = df2.iloc[::-1].reset_index(drop=True)
-    df3 = df3.iloc[::-1].reset_index(drop=True)
-    combined_df = pd.concat([df2, df3.iloc[:, 2:11], df1.iloc[:, 11:12]], axis=1)
-    combined_df.to_csv('../results/stacks/hfzg.csv',
-              index=False,  # 不保存索引
-              encoding='utf_8_sig',  # 支持中文
-              sep=',')  # 分隔符
+    counter=0
+    for name,ts_code in code_list.items():
+
+        df1 = analyzer.get_daily_ak(ts_code, start_date, end_date)
+        df1 = df1.rename(columns={'换手率': 'turnover_rate'})
+        df2 = analyzer.get_stock_chip_distribution(ts_code, start_date, end_date)
+        df3 = analyzer.get_daily_tu(ts_code, start_date, end_date)
+        df2 = df2.iloc[::-1].reset_index(drop=True)
+        df3 = df3.iloc[::-1].reset_index(drop=True)
+        combined_df = pd.concat([df2, df3.iloc[:, 2:11], df1.iloc[:, 11:12]], axis=1)
+        combined_df.to_csv(f'../results/stacks/{name}.csv',
+                  index=False,  # 不保存索引
+                  encoding='utf_8_sig',  # 支持中文
+                  sep=',')  # 分隔符
+        counter+=1
+        if counter % 5 == 0:
+            time.sleep(60)
     # df = pd.read_csv('data_demo.csv',
     #                  encoding='utf_8_sig',  # 中文编码
     #                  parse_dates=['trade_date'])  # 解析日期列
