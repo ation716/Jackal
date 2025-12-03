@@ -22,13 +22,17 @@ id_dict={
 }
 # id_list=['600203','600776','600118','002115','603686','600580','603767','000981','600537','601162']
 
-id_list=['603686','000572','600815','603122']
-# flm,hmqc,xggf,hfzg
+# id_list=['601566','003401','000798','600756','000547','000407','002083','002264','600734']
+# # jmw,zamj,zsyy,lcrj,htfz,slgf,frgf,xhd,sdjt
+id_list=['600734','002264','000547','002792','002413']
+#sdjt,xhd,htfz,tutx,lkfw
 now = datetime.datetime.now()
 today = now.date()
 middle_time1 = datetime.datetime.combine(today, datetime.time(11, 30))
 middle_time2 = datetime.datetime.combine(today, datetime.time(13, 00))
 middle_time3 = datetime.datetime.combine(today, datetime.time(14, 30))
+morning_time1 = datetime.datetime.combine(today, datetime.time(9, 25))
+morning_time2 = datetime.datetime.combine(today, datetime.time(9, 30))
 
 def gen_symbols(id_list):
     symbols=','.join([f'{id}.SZ' for id in id_list if id.startswith('00')])+','+','.join([f'{id}.SH' for id in id_list if id.startswith('60')])
@@ -110,6 +114,7 @@ with open(filename,'a',encoding='utf-8',newline='') as f:
         if now>middle_time1 and now<middle_time2:
             print('middle time')
             time_diff=middle_time2-now
+            sleep_time=min(time_diff.total_seconds(),30)
             time.sleep(time_diff.total_seconds())
         if now>middle_time3:
             volume_treshold=8000
