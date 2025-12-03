@@ -129,6 +129,10 @@ class ChipDistributionAnalyzer:
             print(f"获取数据失败: {e}")
             return None
 
+    def get_stock_chip_akshare(self,ts_code,qfq=""):
+        """akshare 的筹码分布"""
+        return ak.stock_cyq_em(symbol=ts_code, adjust=qfq)
+
     def get_stock_chip_distribute_detail(self, ts_code, start_date, end_date):
         """
         获取详细筹码分布
@@ -275,7 +279,7 @@ def demo_tushare():
 
 if __name__ == '__main__':
     # demo_tushare()
-    ts_code = "002171.SZ"
+    ts_code = "600810.SH"
     # start_date = "20240924"
     # end_date = "20251010"
     # analyzer = ChipDistributionAnalyzer()
@@ -285,12 +289,20 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-    date='20251106'
-    start_date='20251001'
-    end_date='20251105'
+    date='20251208'
+    start_date='20251127'
+    end_date='20251204'
     analyzer = ChipDistributionAnalyzer()
+    name='dmgx'
+    # '002632'
+    # data=analyzer.get_stock_chip_distribute_detail(ts_code='002632.SZ',start_date=start_date,end_date=end_date)
+    # data=analyzer.get_stock_chip_akshare(ts_code='002632')
+    # data.to_csv(f'../st_operator/{name}.csv',
+    #                    index=False,  # 不保存索引
+    #                    encoding='utf_8_sig',  # 支持中文
+    #                    sep=',')  # 分隔符
     limit_up=analyzer.get_limit_up(date=date)
-    # strong=analyzer.get_strong(date=date)
+    strong=analyzer.get_strong(date=date)
     crush=analyzer.get_price_crush(date=date)
     # limit_down=analyzer.get_limit_down(date=date)
     # info=analyzer.get_daily_info('全部')
