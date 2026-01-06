@@ -79,10 +79,6 @@ class ChipDistributionAnalyzer:
         """获取日线行情
         详情参考 https://tushare.pro/document/2?doc_id=27
         """
-        if not ts_code.startswith('60'):
-            ts_code = ts_code+'.SH'
-        if ts_code.startswith('00'):
-            ts_code = ts_code+'.SZ'
         try:
             # 获取日线行情
             ts_code = self.normal_ts_code(ts_code)
@@ -124,10 +120,6 @@ class ChipDistributionAnalyzer:
         weight_avg	float	Y
         winner_rate	float	Y
         """
-        if not ts_code.startswith('60'):
-            ts_code = ts_code+'.SH'
-        if ts_code.startswith('00'):
-            ts_code = ts_code+'.SZ'
         try:
             # 获取筹码分布数据
             ts_code = self.normal_ts_code(ts_code)
@@ -297,9 +289,9 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-    date='20251208'
+    date='20251223'
     start_date='20251127'
-    end_date='20251204'
+    end_date='20251223'
     analyzer = ChipDistributionAnalyzer()
     name='dmgx'
     # '002632'
@@ -310,7 +302,7 @@ if __name__ == '__main__':
     #                    encoding='utf_8_sig',  # 支持中文
     #                    sep=',')  # 分隔符
     limit_up=analyzer.get_limit_up(date=date)
-    strong=analyzer.get_strong(date=date)
+    # strong=analyzer.get_strong(date=date)
     crush=analyzer.get_price_crush(date=date)
     # limit_down=analyzer.get_limit_down(date=date)
     # info=analyzer.get_daily_info('全部')
