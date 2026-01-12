@@ -446,11 +446,12 @@ if __name__ == '__main__':
         # 'bcrl':'000530',
         # 'xrjt':'002639',
         # 'bsrl':'000530',
-        'hskj':'603958',
+        # 'hskj':'603958',
+        'ajsp':'603696'
     }
     # ts_code = "603122.SH"
     start_date = "20240924"
-    end_date = "20251230"
+    end_date = "20260112"
     analyzer = ChipDistributionAnalyzer()
     counter=0
     for name,ts_code in code_list.items():

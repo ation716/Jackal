@@ -27,9 +27,13 @@ id_dict={
 # id_list=['001331','002969','603696','002361','600693','002792','002278']
 # id_list=['002969','603696','002361','600693','002792','002278','000592','603958']
 # stny,jmbz,sjgf,dbjt,tytx,skgf,ptfz,hsgf
-id_list=['603958','000561','000547','002413','600498','002931']
+# ['603958','000561','000547','002413','600498','002931','002582','603696']
 # 20260105
-# hsgf,fhdz,htfz,lkfw,fhtx,flgf
+# hsgf,fhdz,htfz,lkfw,fhtx,flgf,hxn,ajsp
+
+id_list=['603958','000561','000547','002413','600498','002931','002582','603696','603057']
+# 20260112
+# hsgf,fhdz,htfz,lkfw,fhtx,flgf,hxn,ajsp,zysp
 now = datetime.datetime.now()
 today = now.date()
 middle_time1 = datetime.datetime.combine(today, datetime.time(11, 30))
@@ -43,7 +47,7 @@ def gen_symbols(id_list):
     return symbols
 now = datetime.datetime.now()
 today = now.date()
-filename = today.strftime("../results/history/hu%Y-%m-%d.cxv")
+filename = today.strftime("../results/history/hu%Y-%m-%d.cxv") # 记录控盘
 volume_dq=[deque(maxlen=60) for _ in range(len(id_list))]
 volume_last=[0 for _ in range(len(id_list))]
 volume_avg=[0 for _ in range(len(id_list))]
@@ -51,6 +55,8 @@ time_flag=False
 attention_flag=False
 attention_rate=0
 volume_treshold=5000
+
+
 with open(filename,'a',encoding='utf-8',newline='') as f:
     writer = csv.writer(f)
 
@@ -63,9 +69,9 @@ with open(filename,'a',encoding='utf-8',newline='') as f:
         else:
             for i in range(len(df)):
                 change_percent=(df.iloc[i,6]-df.iloc[i,5])/df.iloc[i,5]*100
-                if change_percent<-7:
+                if change_percent<-7: # 如果小于 -7，显示抛压
                     print(f"{df.iloc[i,1][1:7]}, {change_percent:.2f}, {df.iloc[i,23]}",end="\t")
-                elif change_percent>8:
+                elif change_percent>8: # 如果大于8，显示买方
                     print(f"{df.iloc[i,1][1:7]}, {change_percent:.2f}, {df.iloc[i,13]}",end="\t")
                 else:
                     print(f"{df.iloc[i,1][1:7]}, {change_percent:.2f}",end="\t")
@@ -125,5 +131,6 @@ with open(filename,'a',encoding='utf-8',newline='') as f:
 
 
 # 需要看出承压能力
+
 
 

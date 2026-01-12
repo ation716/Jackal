@@ -256,6 +256,10 @@ class ChipDistributionAnalyzer:
     def get_daily_info(self,symbol):
         return ak.stock_info_global_cls(symbol=symbol)
 
+    def get_daily_jgcyd(self,symbol):
+        return ak.stock_comment_detail_zlkp_jgcyd_em(symbol=symbol)
+
+
 
 # 使用示例
 def demo_tushare():
@@ -279,7 +283,7 @@ def demo_tushare():
 
 if __name__ == '__main__':
     # demo_tushare()
-    ts_code = "600810.SH"
+    ts_code = "603696"
     # start_date = "20240924"
     # end_date = "20251010"
     # analyzer = ChipDistributionAnalyzer()
@@ -289,11 +293,12 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-    date='20251223'
+    date='20260112'
     start_date='20251127'
     end_date='20251223'
     analyzer = ChipDistributionAnalyzer()
     name='dmgx'
+    jgcyd=analyzer.get_daily_jgcyd(ts_code)
     # '002632'
     # data=analyzer.get_stock_chip_distribute_detail(ts_code='002632.SZ',start_date=start_date,end_date=end_date)
     # data=analyzer.get_stock_chip_akshare(ts_code='002632')
@@ -309,10 +314,3 @@ if __name__ == '__main__':
     # info=analyzer.get_all_pec(ts_code,start_date,end_date)
     # info.to_csv('tem2',mode="a", index=False, header=False)
     time.sleep(8)
-    # df=analyzer.get_daily_limit_up("20251015")
-    # df=analyzer.get_main_business("601162")
-    # print(df.tail())
-    # for _ in range(100):
-    #     stock_analyst_rank_em_df = ak.stock_market_activity_legu()
-    #     print(stock_analyst_rank_em_df.iloc[0,1],stock_analyst_rank_em_df.iloc[4,1],stock_analyst_rank_em_df.iloc[0,1],)
-    #     time.sleep(5)
