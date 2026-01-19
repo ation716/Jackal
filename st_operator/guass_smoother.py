@@ -1,7 +1,7 @@
 import numpy as np
 from scipy import stats
 import matplotlib.pyplot as plt
-
+import pandas as pd
 
 class AdaptiveForwardGaussianSmoother:
     def __init__(self, min_sigma=0.5, max_sigma=3.0, base_window_size=5, sensitivity=1.0):
@@ -110,8 +110,8 @@ class AdaptiveForwardGaussianSmoother:
 
     def smooth_array(self, array_A):
         """平滑整个数组"""
-        predict_B=np.zeros_like(array_A)
-        array_B = np.zeros_like(array_A)
+        predict_B=np.zeros_like(array_A) # 预测值
+        array_B = np.zeros_like(array_A) # 实际平滑值
         sigmas = np.zeros_like(array_A)
         windows = np.zeros_like(array_A, dtype=int)
 
@@ -157,4 +157,41 @@ class AdaptiveForwardGaussianSmoother:
 
 # 运行测试
 if __name__ == "__main__":
-    pass
+    df=pd.read_csv("../results/stacks/ajsp.csv")
+    array_o=df.iloc[:,11]
+    array_h=df.iloc[:,12]
+    array_l=df.iloc[:,13]
+    array_c=df.iloc[:,14]
+    gs=AdaptiveForwardGaussianSmoother()
+    gs_predict,gs_s,*_=gs.smooth_array(array_c)
+    for i in zip(gs_predict,gs_s,array_c):
+        print(i)
+
+
+    # fig, ax1 = plt.subplots(figsize=(10, 6))
+    #
+    # # 第一个Y轴（左侧）
+    # color1 = 'tab:blue'
+    # ax1.plot(gs_s, color=color1, marker='o', linewidth=0.5)
+    # ax1.set_xlabel('d')
+    # ax1.set_ylabel('price', color=color1)
+    # ax1.tick_params(axis='y', labelcolor=color1)
+    #
+    # # 第二个Y轴（右侧）
+    # # ax2 = ax1.twinx()
+    # # color2 = 'tab:red'
+    # # ax2.plot(gs_predict, color=color2, marker='s', linestyle='--', linewidth=0.5)
+    # # ax2.set_ylabel('y', color=color2)
+    # # ax2.tick_params(axis='y', labelcolor=color2)
+    #
+    # plt.title('anaylize')
+    # fig.tight_layout()
+    # plt.show()
+    # min_len = min(len(gs_predict), len(gs_s))
+    #
+    # combined_df = pd.concat([
+    #     gs_predict.iloc[:min_len, 0],
+    #     gs_s.iloc[:min_len, 0]
+    # ], axis=1)
+    # combined_df.to_csv('filled.csv', index=False)
+    # pass

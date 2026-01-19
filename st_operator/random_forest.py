@@ -451,7 +451,7 @@ if __name__ == '__main__':
     }
     # ts_code = "603122.SH"
     start_date = "20240924"
-    end_date = "20260112"
+    end_date = "20260114"
     analyzer = ChipDistributionAnalyzer()
     counter=0
     for name,ts_code in code_list.items():
