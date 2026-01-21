@@ -31,9 +31,13 @@ id_dict={
 # 20260105
 # hsgf,fhdz,htfz,lkfw,fhtx,flgf,hxn,ajsp
 
-id_list=['603958','000561','000547','002413','600498','002931','002582','603696','603057','600410']
-# 20260112
-# hsgf,fhdz,htfz,lkfw,fhtx,flgf,hxn,ajsp,zysp,hstc
+# id_list=['603958','000561','000547','002413','600498','002931','002582','603696','603057','600410','002465','002115','002413','002202']
+# # 20260112
+# # hsgf,fhdz,htfz,lkfw,fhtx,flgf,hxn,ajsp,zysp,hstc,hgtx,swtx,lkfw,jfkj
+
+id_list=['002465','002115','002413','002202']
+# 20260125
+# hgtx,swtx,lkfw,jfkj
 now = datetime.datetime.now()
 today = now.date()
 middle_time1 = datetime.datetime.combine(today, datetime.time(11, 30))
@@ -43,8 +47,11 @@ morning_time1 = datetime.datetime.combine(today, datetime.time(9, 25))
 morning_time2 = datetime.datetime.combine(today, datetime.time(9, 30))
 
 def gen_symbols(id_list):
-    symbols=','.join([f'{id}.SZ' for id in id_list if id.startswith('00')])+','+','.join([f'{id}.SH' for id in id_list if id.startswith('60')])
-    return symbols
+    sz = ','.join([f'{id}.SZ' for id in id_list if id.startswith('00')])
+    sh = ','.join([f'{id}.SH' for id in id_list if id.startswith('60')])
+    if not sz or not sh:
+        return sz + sh
+    return sz + ',' + sh
 now = datetime.datetime.now()
 today = now.date()
 filename = today.strftime("../results/history/hu%Y-%m-%d.cxv") # 记录控盘

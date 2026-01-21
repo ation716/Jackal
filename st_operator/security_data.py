@@ -293,7 +293,7 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-    date='20260119'
+    date='20260120'
     start_date='20251127'
     end_date='20251223'
     analyzer = ChipDistributionAnalyzer()
