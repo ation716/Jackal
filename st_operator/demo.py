@@ -35,9 +35,15 @@ id_dict={
 # # 20260112
 # # hsgf,fhdz,htfz,lkfw,fhtx,flgf,hxn,ajsp,zysp,hstc,hgtx,swtx,lkfw,jfkj
 
-id_list=['002465','002115','002413','002202']
-# 20260125
-# hgtx,swtx,lkfw,jfkj
+# id_list=['002465','002115','002413','002202','002361','000547','603686','000048']
+# # 20260125
+# # hgtx,swtx,lkfw,jfkj,sjgf,htfz,flm,jjzl
+
+# id_list=['600172','000815','000620','601869','603629','002264','002582','600785','601116','600313','000048','003042']
+# hhxf,mly,yxfz,cfgq,ltdz,xhd,hxn,xhbh,sjgw,lfzy,jjzl,zllh
+
+id_list=['600172','000620','603629','002264','002582','600785','601116','600313','000048','003042','600778','600814']
+# hhxf,yxfz,ltdz,xhd,hxn,xhbh,sjgw,lfzy,jjzl,zllh,yhjt,hzjb
 now = datetime.datetime.now()
 today = now.date()
 middle_time1 = datetime.datetime.combine(today, datetime.time(11, 30))
