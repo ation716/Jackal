@@ -1,3 +1,4 @@
+
 # Always leave yourself outs
 # There's a lot more opportunities in the market than I was expecting.
 
@@ -35,24 +36,9 @@ id_dict={
 # # 20260112
 # # hsgf,fhdz,htfz,lkfw,fhtx,flgf,hxn,ajsp,zysp,hstc,hgtx,swtx,lkfw,jfkj
 
-# id_list=['002465','002115','002413','002202','002361','000547','603686','000048']
-# # 20260125
-# # hgtx,swtx,lkfw,jfkj,sjgf,htfz,flm,jjzl
-
-# id_list=['600172','000815','000620','601869','603629','002264','002582','600785','601116','600313','000048','003042']
-# hhxf,mly,yxfz,cfgq,ltdz,xhd,hxn,xhbh,sjgw,lfzy,jjzl,zllh
-
-# id_list=['600172','000620','603629','002264','002582','600785','601116','600313','000048','003042','600778','600814']
-# hhxf,yxfz,ltdz,xhd,hxn,xhbh,sjgw,lfzy,jjzl,zllh,yhjt,hzjb
-
-# id_list=['001209']
-# id_list=['002167','600410','600821']
-# # dfhy,hstc,jkxn
-
-# id_list=['000537','601789','002298','002445','605268','002167','600410','600821','002261']
-# lfdl,nbjg,zdxl,znwh,wlaf,dfhy,hstc,jkxn.twxx
-id_list=['600410','002261']
-# hstc,twxx
+id_list=['002465','002115','002413','002202']
+# 20260125
+# hgtx,swtx,lkfw,jfkj
 now = datetime.datetime.now()
 today = now.date()
 middle_time1 = datetime.datetime.combine(today, datetime.time(11, 30))
@@ -62,11 +48,12 @@ morning_time1 = datetime.datetime.combine(today, datetime.time(9, 25))
 morning_time2 = datetime.datetime.combine(today, datetime.time(9, 30))
 
 def gen_symbols(id_list):
-    sz = ','.join([f'{id}.SZ' for id in id_list if id.startswith('00')])
-    sh = ','.join([f'{id}.SH' for id in id_list if id.startswith('60')])
+    symbols=','.join([f'{id}.SZ' for id in id_list if id.startswith('00')])+','+','.join([f'{id}.SH' for id in id_list if id.startswith('60')])
+    sz=','.join([f'{id}.SZ' for id in id_list if id.startswith('00')])
+    sh=','.join([f'{id}.SH' for id in id_list if id.startswith('60')])
     if not sz or not sh:
-        return sz + sh
-    return sz + ',' + sh
+        return sz+sh
+    return sz+','+sh
 now = datetime.datetime.now()
 today = now.date()
 filename = today.strftime("../results/history/hu%Y-%m-%d.cxv") # 记录控盘
@@ -76,7 +63,7 @@ volume_avg=[0 for _ in range(len(id_list))]
 time_flag=False
 attention_flag=False
 attention_rate=0
-volume_treshold=100
+volume_treshold=5000
 
 
 with open(filename,'a',encoding='utf-8',newline='') as f:
@@ -149,7 +136,7 @@ with open(filename,'a',encoding='utf-8',newline='') as f:
             sleep_time=min(time_diff.total_seconds(),30)
             time.sleep(time_diff.total_seconds())
         if now>middle_time3:
-            volume_treshold=100
+            volume_treshold=8000
 
 
 # 需要看出承压能力

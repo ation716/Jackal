@@ -1,0 +1,1 @@
+AdaptiveForwardGaussianSmoother 是一个专门用于实时数据流平滑处理的类，具有自适应调整参数的能力。

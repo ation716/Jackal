@@ -2,221 +2,352 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+import matplotlib
 from heston import *
+from guass_smoother import AdaptiveForwardGaussianSmoother
 import akshare as ak
 import pandas as pd
+from datetime import datetime, timedelta
+
+# 中文字体支持
+matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
+matplotlib.rcParams['axes.unicode_minus'] = False
 
 
-stock_code = "603686"
+# ───────────────────────── 凯利策略核心函数 ──────────────────────────
 
-# 获取最近 1 年的日线数据（足够覆盖 200 个交易日）
-# stock_zh_a_hist_df = ak.stock_zh_a_hist(symbol=stock_code, period="daily", start_date="20240101", end_date="20250929", adjust="qfq")
+def kalley1(p, b):
+    """经典凯利  p - (1-p)/b"""
+    return p - (1 - p) / b
 
-# 提取收盘价并取最近 200 个交易日
-# close_prices = stock_zh_a_hist_df['收盘'].tail(200).tolist()
-close_prices=[9.73, 9.69, 9.62, 9.77, 9.84, 9.56, 9.52, 9.26, 9.26, 9.18, 9.69, 9.73, 10.72, 11.81, 13.01, 12.67, 11.39, 10.24, 9.85, 9.18, 8.96, 9.26, 9.18, 9.32, 9.42, 9.26, 9.92, 10.35, 10.24, 9.89, 10.52, 10.61, 10.33, 10.44, 11.08, 10.53, 10.7, 10.97, 10.89, 11.01, 11.39, 11.41, 10.99, 10.78, 10.96, 10.75, 11.22, 11.28, 11.3, 11.25, 11.17, 11.77, 11.83, 12.19, 12.82, 12.54, 13.24, 13.22, 12.41, 12.41, 12.3, 12.24, 11.78, 11.95, 12.17, 12.27, 12.58, 12.54, 13.81, 14.01, 13.29, 13.43, 14.4, 13.53, 14.9, 14.66, 14.28, 12.84, 11.54, 10.67, 11.3, 11.64, 11.85, 11.81, 11.67, 11.3, 11.29, 11.29, 11.6, 11.42, 11.77, 11.61, 11.79, 11.34, 11.91, 12.59, 13.12, 13.0, 13.23, 12.93, 13.25, 13.15, 13.14, 13.04, 13.12, 14.45, 14.41, 13.87, 13.69, 13.48, 13.61, 14.46, 14.55, 16.02, 17.64, 17.45, 15.75, 15.28, 15.44, 15.52, 15.14, 15.43, 15.64, 15.04, 14.74, 14.64, 14.34, 14.18, 14.18, 14.78, 15.2, 15.79, 15.63, 16.57, 16.34, 16.08, 15.85, 16.11, 15.87, 16.14, 16.27, 15.8, 15.94, 15.76, 16.46, 16.42, 16.39, 16.57, 17.08, 16.9, 16.4, 16.09, 16.44, 16.44, 16.57, 16.24, 16.47, 15.82, 16.85, 17.31, 17.35, 17.74, 17.61, 17.43, 17.83, 18.0, 18.32, 17.92, 19.71, 19.55, 19.35, 19.05, 19.3, 19.26, 20.01, 19.88, 19.14, 18.07, 18.57, 18.5, 19.06, 19.42, 18.97, 19.17, 18.94, 19.36, 19.15, 18.89, 18.54, 18.53, 19.92, 19.11, 21.02, 23.12, 25.43, 27.97, 27.1, 24.39, 21.95, 21.8,21.86]
-# print(f"{stock_code} 最近 200 个交易日的收盘价数组：")
-print(close_prices)
 
-# Heston 模型参数
-S0 = close_prices[0]  # 初始股价
-v0 = 0.09  # 初始方差 (对应初始波动率20%，因为 sqrt(0.04)=0.2) 初始波动率可以参考 vix 恐慌指数, 越大越恐慌,0.04 为波动率 20% 的均衡状态
-mu = 0.03  # 期望年收益率 (一般为5%)
-kappa = 2.0  # 均值回归速度  "κ < 1": "慢速回归 - 波动率冲击持续较长时间","1 < κ < 3": "中等速度 - 典型市场情况", "κ > 3": "快速回归 - 波动率迅速回到正常水平"
-theta = 0.09  # 长期平均方差 (对应长期平均波动率20%),θ=0.0100 → 长期波动率=10.00% → 低波动环境 (平静市场),θ=0.0400 → 长期波动率=20.00% → 正常波动环境,θ=0.0625 → 长期波动率=25.00% → 高波动环境,θ=0.0900 → 长期波动率=30.00% → 极高波动环境 (危机模式), 不同板块的波动率不一样d
-sigma = 0.3  # 方差波动率
-rho = -0.6 # 价格与波动的相关系数 (通常为负，体现杠杆效应), "范围": (-0.8, -0.4),
-T = 1.5  # 模拟1年
-N = len(close_prices) # 时间步数
-num_sims = 1  # 模拟路径数
+def kalley2(p, r):
+    """零和博弈的凯利 (2p-1)/r"""
+    if r == 0:
+        r = 0.0001
+    return (2 * p - 1) / r
 
-# f(p) = [ p * r_win(p) + (1-p) * r_loss(p) ] / [ - r_win(p) * r_loss(p) ]
 
-def kellly_strategy_continues(p_matrix,b_matrix):
-    """ 凯莉策略 """
-    # 转换为numpy数组以便操作
+def kellly_strategy_continues(p_matrix, b_matrix):
+    """凯莉策略（经典凯利）"""
     p_matrix = np.array(p_matrix, dtype=float)
     result = np.zeros_like(p_matrix)
-
-    # 对每个位置计算加权平均
     for i in range(len(p_matrix)):
-        if b_matrix[i]<0:  # 刚开始不清楚情况保守策略
+        if b_matrix[i] < 0:
             result[i] = 0
         else:
-            tem = kalley1(p_matrix[i],b_matrix[i]*10)
-            if tem<0:
+            tem = kalley1(p_matrix[i], b_matrix[i] * 10)
+            if tem < 0:
                 result[i] = 0
-            elif tem<1:
+            elif tem < 1:
                 result[i] = tem
             else:
                 result[i] = 1
     return result
 
-def kellly_strategy_continues2(p_matrix,b_matrix):
-    """ 凯莉策略 """
-    # 转换为numpy数组以便操作
+
+def kellly_strategy_continues2(p_matrix, b_matrix):
+    """凯莉策略（零和博弈）"""
     p_matrix = np.array(p_matrix, dtype=float)
     result = np.zeros_like(p_matrix)
-
-    # 对每个位置计算加权平均
     for i in range(len(p_matrix)):
-        if b_matrix[i]<0:  # 刚开始不清楚情况保守策略
+        if b_matrix[i] < 0:
             result[i] = 0
-        tem = kalley2(p_matrix[i],b_matrix[i]*10)
-        if tem<0:
+        tem = kalley2(p_matrix[i], b_matrix[i] * 10)
+        if tem < 0:
             result[i] = 0
-        elif tem<1:
+        elif tem < 1:
             result[i] = tem
         else:
             result[i] = 1
     return result
 
-def kalley1(p,b):
-    """ 经典凯莉  p - (1-p)/b """
-    return p-(1-p)/b
 
-def kalley2(p,r):
-    """ 在 f(p) = [ p * r_win(p) + (1-p) * r_loss(p) ] / [ - r_win(p) * r_loss(p) ]，
-    零和博弈的凯莉 (2p-1)/r
-    """
-    if r==0:
-        r=0.0001
-    return (2*p-1)/r
-
-def kalley3(p,r):
-    """"""
-
-
-
-
-def continuse_gain(kelly_weight,path,s0):
-    """ 计算 assets """
-    result = np.zeros(len(path)+1)
+def continuse_gain(kelly_weight, path, s0):
+    """计算 Kelly 策略资产曲线"""
+    result = np.zeros(len(path) + 1)
     for i in range(len(result)):
-        if i<2:
-            result[i]=s0
+        if i < 2:
+            result[i] = s0
         else:
-            result[i]=result[i-1]*kelly_weight[i-2]*(1+path[i-1])+result[i-1]*(1-kelly_weight[i-2])
+            result[i] = (result[i - 1] * kelly_weight[i - 2] * (1 + path[i - 1])
+                         + result[i - 1] * (1 - kelly_weight[i - 2]))
     return result
 
 
+# ───────────────────────── 主分析函数 ──────────────────────────
+
+def analyze_stock(stock_code: str, start_date: str, end_date: str):
+    """
+    根据股票代码、起始时间、终止时间进行分析：
+      1. 绘制高斯平滑后的预测曲线（含未来2天预测 + 准确率）
+      2. 绘制凯利策略收益曲线
+
+    Parameters
+    ----------
+    stock_code : str   股票代码，如 "600410"
+    start_date : str   起始日期 YYYYMMDD，如 "20250101"
+    end_date   : str   终止日期 YYYYMMDD，如 "20260312"
+    """
+    # ── 1. 拉取历史数据 ──
+    df = ak.stock_zh_a_hist(
+        symbol=stock_code, period="daily",
+        start_date=start_date, end_date=end_date, adjust="qfq"
+    )
+    if df.empty or len(df) < 10:
+        print(f"[错误] 股票 {stock_code} 在 {start_date}~{end_date} 数据不足（{len(df)} 条）")
+        return None
+
+    close_prices = df['收盘'].tolist()
+    dates        = [str(d)[:10] for d in df['日期'].tolist()]
+    N  = len(close_prices)
+    S0 = close_prices[0]
+    S_array = np.array(close_prices, dtype=float)
+
+    # ── 2. 高斯自适应平滑 & 历史预测 ──
+    smoother = AdaptiveForwardGaussianSmoother(
+        min_sigma=0.3, max_sigma=2.0, base_window_size=7, sensitivity=3
+    )
+    predict_B, smooth_B, sigmas, windows = smoother.smooth_array(close_prices)
+    # predict_B[i]  ≈ 对 close_prices[i+1] 的预测  (i=0..N-2 有效)
+
+    # ── 3. 预测未来2天 ──
+    # smoother.history 此时包含全部 N 个历史价格
+    pred_day1 = smoother.predict_next()          # D+1 预测
+    smoother.history.append(pred_day1)
+    pred_day2 = smoother.predict_next()          # D+2 预测（基于 history + pred_day1）
+
+    # ── 4. 尝试获取未来2个交易日的实际价格（用于验证准确率） ──
+    end_dt   = datetime.strptime(end_date, "%Y%m%d")
+    next_str = (end_dt + timedelta(days=1)).strftime("%Y%m%d")
+    far_str  = (end_dt + timedelta(days=14)).strftime("%Y%m%d")  # 多留14天保证覆盖2个交易日
+
+    future_prices = []
+    future_dates  = []
+    try:
+        df_fut = ak.stock_zh_a_hist(
+            symbol=stock_code, period="daily",
+            start_date=next_str, end_date=far_str, adjust="qfq"
+        )
+        if not df_fut.empty:
+            future_prices = df_fut['收盘'].tolist()[:2]
+            future_dates  = [str(d)[:10] for d in df_fut['日期'].tolist()][:2]
+    except Exception:
+        pass
+
+    # ── 5. 历史预测准确率 ──
+    # gauss_d[i] 预测 S_array[i+1]，共 N-1 对
+    hist_preds  = predict_B[:-1]          # 对 S_array[1..N-1] 的预测
+    hist_actual = S_array[1:]
+    hist_acc    = np.clip(1 - np.abs(hist_preds - hist_actual) * 5 / hist_actual, 0, 1)
+    hist_acc_sm = np.clip(test_adaptive_smoothing(hist_acc, s=1), 0, 1)
+
+    # 未来2天准确率（仅在有实际数据时计算）
+    future_acc = []
+    for k, pred in enumerate([pred_day1, pred_day2]):
+        if k < len(future_prices):
+            acc = max(0.0, min(1.0, 1 - abs(pred - future_prices[k]) * 5 / future_prices[k]))
+            future_acc.append(acc)
+
+    # ── 6. 凯利策略 ──
+    gain_loss_p   = np.clip((predict_B[1:] - predict_B[:-1]) / predict_B[:-1], -0.1, 0.1)
+    kelly_weights = kellly_strategy_continues2(hist_acc_sm, gain_loss_p)
+    gain_loss_r   = (S_array[1:] - S_array[:-1]) / S_array[:-1]
+    assets        = continuse_gain(kelly_weights, gain_loss_r, S0)
+
+    # ── 7. 绘图 ──
+    _plot_analysis(
+        stock_code, start_date, end_date,
+        S_array, dates,
+        predict_B, smooth_B,
+        pred_day1, pred_day2,
+        future_prices, future_dates, future_acc,
+        hist_acc, hist_acc_sm,
+        kelly_weights, assets, S0
+    )
+
+    # ── 8. 控制台摘要 ──
+    mean_acc_20  = float(np.mean(hist_acc[-20:]))
+    final_val    = assets[-1]
+    total_return = (final_val / S0 - 1) * 100
+    bh_return    = (S_array[-1] / S0 - 1) * 100
+
+    print(f"\n{'='*45}")
+    print(f"  股票 {stock_code}  {start_date} ~ {end_date}  共 {N} 交易日")
+    print(f"{'='*45}")
+    print(f"  近20日历史预测准确率均值: {mean_acc_20*100:.1f}%")
+    print(f"\n  未来2天预测:")
+    for k, (pred, label) in enumerate([(pred_day1, 'D+1'), (pred_day2, 'D+2')]):
+        date_str = future_dates[k] if k < len(future_dates) else label
+        line = f"    {date_str}: 预测={pred:.3f}"
+        if k < len(future_prices):
+            line += f"  实际={future_prices[k]:.3f}  准确率={future_acc[k]*100:.1f}%"
+        print(line)
+    print(f"\n  凯利策略:")
+    print(f"    初始={S0:.3f}  终值={final_val:.3f}  总收益={total_return:+.1f}%")
+    print(f"    买入持有收益: {bh_return:+.1f}%")
+    print(f"{'='*45}\n")
+
+    return {
+        'close_prices':   close_prices,
+        'dates':          dates,
+        'predict_B':      predict_B,
+        'smooth_B':       smooth_B,
+        'pred_day1':      pred_day1,
+        'pred_day2':      pred_day2,
+        'future_prices':  future_prices,
+        'future_acc':     future_acc,
+        'hist_acc':       hist_acc,
+        'kelly_weights':  kelly_weights,
+        'assets':         assets,
+    }
 
 
-if __name__ == "__main__":
-    t = np.linspace(0, T, N)
-    S_paths=[[],]
-    S_paths[0]=close_prices
-    S_array=np.array(S_paths[0])
-    mean_slip_price=weighted_moving_average(S_paths[0],4, [0.1, 0.15, 0.25, 0.5]) # 移动加权平滑
+# ───────────────────────── 绘图辅助函数 ──────────────────────────
 
-    gauss_d=test_adaptive_smoothing(S_paths[0])  # 高斯前向平滑预测
+def _plot_analysis(
+    stock_code, start_date, end_date,
+    S_array, dates,
+    predict_B, smooth_B,
+    pred_day1, pred_day2,
+    future_prices, future_dates, future_acc,
+    hist_acc, hist_acc_sm,
+    kelly_weights, assets, S0
+):
+    N = len(S_array)
 
-    mean_acc = np.ones_like(gauss_d[:-1])-np.abs(gauss_d[:-1] - S_paths[0][1:])*5 / S_paths[0][1:]
-    mean_slip_accurance = test_adaptive_smoothing(mean_acc,s=1) # 准确率估算
-    mean_slip_accurance=np.clip(mean_slip_accurance,0,1) # 准确率范围修正
-    # shift_s=shift_right_fill(S_paths[0],1,S0)
-    gain_loss_p=(gauss_d[1:]-gauss_d[:-1]) / gauss_d[:-1] # 实际和预测比较计算预估涨幅
-    gain_loss_p=np.clip(gain_loss_p,-0.1,0.1)
-    kelly_weights=kellly_strategy_continues2(mean_slip_accurance,gain_loss_p)
-    gain_loss_r=(S_array[1:]-S_array[:-1])/ S_array[:-1]  # 实际涨幅计算
-    assets=continuse_gain(kelly_weights,gain_loss_r,S0)
+    fig, axes = plt.subplots(3, 1, figsize=(15, 12),
+                             gridspec_kw={'height_ratios': [3, 1, 2]})
+    fig.suptitle(
+        f'{stock_code}   {start_date[:4]}-{start_date[4:6]}-{start_date[6:]} '
+        f'~ {end_date[:4]}-{end_date[4:6]}-{end_date[6:]}',
+        fontsize=14, fontweight='bold'
+    )
+    ax_price, ax_acc, ax_kelly = axes
 
-    with open('kelly_weights1.txt', 'w') as f:
-        f.write("kelly_weight\tgain_loss_r\tmean_slip_accurance\tgain_loss_p\tS_paths[0]\tassets\n")
-        for i in range(len(S_paths[0])):
-            if i<1:
-                f.write("{:<10s}{:<10s}{:<10s}{:<10s}{:<10.5f}{:<10.5f}\n".format(
-                    "---", "---", "---", '---', S_paths[0][i], S_paths[0][0]))
-            else:
-                f.write("{:<10.5f}{:<10.5f}{:<10.5f}{:<10.5f}{:<10.5f}{:<10.5f}\n".format(
-                    kelly_weights[i-2], gain_loss_r[i-1], mean_slip_accurance[i-2], gain_loss_p[i-1], S_paths[0][i], assets[i-1]))
-        f.write("{:<10.5f}{:<10s}{:<10.5f}{:<10s}({:^10.5f}){:<10s}\n".format(
-                kelly_weights[len(S_paths[0])-2], '---', mean_slip_accurance[len(S_paths[0])-2], '---', gauss_d[len(S_paths[0])-1], '---'))
+    # ── X 轴刻度（日期） ──
+    tick_step = max(1, N // 10)
+    tick_pos  = list(range(0, N, tick_step))
+    if N - 1 not in tick_pos:
+        tick_pos.append(N - 1)
+    tick_pos += [N, N + 1]
 
+    tick_labels_price = [dates[i] for i in tick_pos[:-2]]
+    tick_labels_price += [
+        future_dates[0] if future_dates else 'D+1',
+        future_dates[1] if len(future_dates) > 1 else 'D+2',
+    ]
 
+    # ────────── 子图1：价格 + 高斯预测 ──────────
+    ax_price.plot(range(N), S_array, lw=1.5, color='steelblue',
+                  label='实际价格', zorder=3)
 
+    # 历史预测曲线：predict_B[i] 对应 close_prices[i+1] → 绘制于 i+1 位置
+    ax_price.plot(range(1, N), predict_B[:-1], lw=1.2, color='darkorange',
+                  linestyle='--', alpha=0.85, label='高斯预测(历史)', zorder=2)
 
-    # # 绘图 - 价格路径
-    fig,(ax1,ax2)=plt.subplots(2, 1, figsize=(12, 8))
-    # plt.figure(figsize=(12, 8))
-    # plt.subplot(3, 1, 1)
-    for i in range(num_sims):
-        ax1.plot(t, S_paths[0], lw=1,label='S_paths')
-    ax1.set_title('Heston Model')
-    ax1.set_ylabel('Price')
-    ax1.grid(True)
+    # 高斯平滑曲线（实际平滑值，不偏移）
+    ax_price.plot(range(N), smooth_B, lw=1, color='mediumpurple',
+                  linestyle=':', alpha=0.6, label='高斯平滑', zorder=2)
 
-    for i in range(num_sims):
-        ax1.plot(t+T/N, gauss_d, lw=1,label='gauss_d')
+    # 未来2天预测线
+    fut_x = [N - 1, N, N + 1]
+    fut_y = [S_array[-1], pred_day1, pred_day2]
+    ax_price.plot(fut_x, fut_y, lw=2.5, color='tomato', linestyle='--',
+                  marker='o', markersize=9, label='未来2天预测', zorder=5)
 
-    for i in range(num_sims):
-        ax2.plot(t, assets, lw=1,label='assets')
-    plt.title('gauss')
-    plt.xlabel('Time (Years)')
-    plt.ylabel('Variance')
-    plt.grid(True)
-    plt.legend()
+    # 如果有验证数据，画出来
+    if future_prices:
+        ax_price.plot(range(N, N + len(future_prices)), future_prices,
+                      lw=1.5, color='limegreen', marker='s', markersize=8,
+                      label='实际(验证)', zorder=6)
+
+    # 预测值 & 准确率标注
+    price_range = S_array.max() - S_array.min()
+    offset = price_range * 0.06
+    for k, (px, py, pred) in enumerate(
+        [(N, pred_day1, pred_day1), (N + 1, pred_day2, pred_day2)]
+    ):
+        lines = [f'D+{k+1}: {pred:.2f}']
+        if k < len(future_acc):
+            lines.append(f'准确率: {future_acc[k]*100:.1f}%')
+            color = 'green' if future_acc[k] > 0.7 else ('orange' if future_acc[k] > 0.5 else 'red')
+        else:
+            color = 'tomato'
+        ax_price.annotate(
+            '\n'.join(lines),
+            xy=(px, py),
+            xytext=(px - max(N // 8, 6), py + offset * (1.2 + k * 0.8)),
+            arrowprops=dict(arrowstyle='->', color=color, lw=1.5),
+            fontsize=9, color=color,
+            bbox=dict(boxstyle='round,pad=0.3', fc='lightyellow', alpha=0.9)
+        )
+
+    # 近期历史准确率文字提示
+    mean_acc_20 = float(np.mean(hist_acc[-20:]))
+    ax_price.text(
+        0.01, 0.97,
+        f'近20日历史预测准确率: {mean_acc_20*100:.1f}%',
+        transform=ax_price.transAxes, fontsize=10, va='top',
+        bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.9)
+    )
+
+    ax_price.set_xticks(tick_pos)
+    ax_price.set_xticklabels(tick_labels_price, rotation=45, ha='right', fontsize=7)
+    ax_price.set_title('价格走势 & 高斯平滑预测')
+    ax_price.set_ylabel('价格')
+    ax_price.legend(loc='upper left', fontsize=9)
+    ax_price.grid(True, alpha=0.3)
+
+    # ────────── 子图2：历史预测准确率 ──────────
+    ax_acc.fill_between(range(1, N), hist_acc, alpha=0.3, color='orange', label='单日准确率')
+    ax_acc.plot(range(1, N), hist_acc_sm, lw=1.2, color='darkorange', label='平滑准确率')
+    ax_acc.axhline(0.7, color='green', lw=0.8, linestyle='--', alpha=0.6, label='70%基准')
+    ax_acc.set_ylim(0, 1.05)
+    ax_acc.set_xticks(tick_pos[:-2])
+    ax_acc.set_xticklabels(tick_labels_price[:-2], rotation=45, ha='right', fontsize=7)
+    ax_acc.set_title('历史预测准确率')
+    ax_acc.set_ylabel('准确率')
+    ax_acc.legend(loc='lower left', fontsize=8)
+    ax_acc.grid(True, alpha=0.3)
+
+    # ────────── 子图3：凯利策略收益 ──────────
+    t_asset = np.arange(N)
+    ax_kelly.plot(t_asset, assets, lw=1.8, color='mediumseagreen',
+                  label='凯利策略资产', zorder=3)
+    ax_kelly.plot(t_asset, S_array, lw=1, color='steelblue',
+                  linestyle=':', alpha=0.7, label='买入持有(股价)', zorder=2)
+    ax_kelly.axhline(S0, color='silver', linestyle='--', lw=0.8, alpha=0.7)
+
+    final_val    = assets[-1]
+    total_return = (final_val / S0 - 1) * 100
+    bh_return    = (S_array[-1] / S0 - 1) * 100
+
+    # 最终值标注
+    xt = max(0, N - N // 5)
+    yt = final_val * (0.88 if total_return > 0 else 1.08)
+    ax_kelly.annotate(
+        f'终值: {final_val:.2f}\n凯利: {total_return:+.1f}%\n持有: {bh_return:+.1f}%',
+        xy=(N - 1, final_val),
+        xytext=(xt, yt),
+        arrowprops=dict(arrowstyle='->', color='mediumseagreen', lw=1.5),
+        fontsize=9, color='mediumseagreen',
+        bbox=dict(boxstyle='round,pad=0.3', fc='honeydew', alpha=0.9)
+    )
+
+    ax_kelly.set_xticks(tick_pos[:-2])
+    ax_kelly.set_xticklabels(tick_labels_price[:-2], rotation=45, ha='right', fontsize=7)
+    ax_kelly.set_title(f'凯利策略收益曲线  总收益: {total_return:+.1f}%  (买入持有: {bh_return:+.1f}%)')
+    ax_kelly.set_ylabel('资产价值')
+    ax_kelly.set_xlabel('日期')
+    ax_kelly.legend(loc='upper left', fontsize=9)
+    ax_kelly.grid(True, alpha=0.3)
+
     plt.tight_layout()
     plt.show()
 
 
+# ───────────────────────── 入口 ──────────────────────────
 
-
-
-
-
-
-
-
-#
-# # 6. 绘图
-# fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(14, 12))
-# fig.suptitle('Heston Model Simulation with Kelly Criterion Strategy (Continuous Compounding)')
-#
-# # 子图1: 股票价格路径
-# ax1.plot(S, color='b', lw=1.5)
-# ax1.set_ylabel('Stock Price ($)')
-# ax1.grid(True)
-# ax1.set_title('Simulated Stock Price Path (Heston Model)')
-#
-# # 子图2: 瞬时波动率路径
-# ax2.plot(np.sqrt(v), color='r', lw=1.5)
-# ax2.set_ylabel('Volatility')
-# ax2.grid(True)
-# ax2.set_title('Instantaneous Volatility Path')
-#
-# # 子图3: 投资组合价值路径（连续复利）
-# ax3.plot(V, color='g', lw=2.5, label='Portfolio Value')
-# ax3.set_ylabel('Portfolio Value ($)')
-# ax3.set_xlabel('Time (Days)')
-# ax3.grid(True)
-# ax3.set_title('Portfolio Value Evolution with Continuous Compounding (Kelly Criterion)')
-# ax3.legend()
-#
-# # 在组合价值图上标注最终价值
-# final_value = V[-1]
-# ax3.annotate(f'Final Value: ${final_value:,.2f}',
-#              xy=(N - 1, final_value),
-#              xytext=(N - 50, final_value * 0.8),  # 动态调整标注位置
-#              arrowprops=dict(facecolor='black', shrink=0.05, width=1.5),
-#              fontsize=12,
-#              bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.5))
-#
-# # 子图4: 凯利投资比例
-# ax4.plot(f_star_arr, color='purple', lw=1.5)
-# ax4.set_ylabel('Kelly Fraction (f*)')
-# ax4.set_xlabel('Time (Days)')
-# ax4.grid(True)
-# ax4.set_title('Optimal Investment Fraction Over Time')
-# ax4.axhline(y=1.0, color='r', linestyle='--', alpha=0.7, label='100% Allocation')
-# ax4.legend()
-#
-# plt.tight_layout()
-# plt.show()
-#
-# # 打印一些关键结果
-# print(f"Initial Portfolio Value: ${V[0]:,.2f}")
-# print(f"Final Portfolio Value: ${final_value:,.2f}")
-# print(f"Total Return: {((final_value / V[0]) - 1) * 100:.2f}%")
-# print(f"Final Kelly Fraction (f*): {f_star_arr[-1]:.4f} ({f_star_arr[-1] * 100:.1f}% allocation)")
-# print(f"Annualized Log Return: {cumulative_growth[-1] * 100:.2f}%")  # 年化对数收益率
+if __name__ == "__main__":
+    analyze_stock("600410", "20250101", "20260312")
