@@ -93,11 +93,22 @@ def pct_change_n(close_arr, n):
 # ─────────────────────────────────────────────────────────────────
 
 class DataFetcher:
+    _instance = None
     def __init__(self):
+        if self._initialized:
+            return
+        self._initialized = True
         self.analyzer = ChipDistributionAnalyzer()
         self._sh_cache = None       # 上证指数历史
         self._hot_cache = None      # 热榜
         self._realtime_map = {}     # {6位代码: 实时价格}
+        print("  [DataFetcher] 初始化完成")
+
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super().__new__(cls)
+            cls._instance._initialized = False
+        return cls._instance
 
     # ── 实时行情（tushare realtime_quote 批量拉取）──────────────
     @staticmethod
@@ -121,6 +132,8 @@ class DataFetcher:
                 self._realtime_map[ts_code[:6]] = price
             except Exception:
                 pass
+        # print(self._realtime_map)
+
 
     def get_realtime_price(self, code):
         """从缓存的实时行情里查价格"""
@@ -132,6 +145,7 @@ class DataFetcher:
         end = datetime.date.today().strftime('%Y%m%d')
         start_dt = datetime.date.today() - datetime.timedelta(days=int(days * 1.8))
         start = start_dt.strftime('%Y%m%d')
+        # 先东财
         df = safe_call(
             ak.stock_zh_a_hist,
             default=None,
@@ -142,6 +156,24 @@ class DataFetcher:
             end_date=end,
             adjust=''
         )
+        # 再新浪
+        if df is None or df.empty:
+            df = safe_call(
+                ak.stock_zh_a_daily,
+                symbol='SH'+str(code) if str(code).startswith('6') else 'SZ'+str(code),
+                start_date=start,
+                end_date=end,
+                adjust=''
+            )
+        # 再腾讯
+        if df is None or df.empty:
+            df = safe_call(
+                ak.stock_zh_a_hist_tx,
+                symbol='SH' + str(code) if str(code).startswith('6') else 'SZ' + str(code),
+                start_date=start,
+                end_date=end,
+                adjust=''
+            )
         if df is None or df.empty:
             return pd.DataFrame()
         df = df.sort_values('日期').tail(days).reset_index(drop=True)
@@ -201,15 +233,28 @@ class DataFetcher:
     # ── 板块信息 ─────────────────────────────────────────────────
     def get_sector_name(self, code):
         """获取个股所属行业板块名称"""
+        # 先东方财富
         df = safe_call(
             ak.stock_individual_info_em,
             default=None,
             sleep_sec=0.5,
             symbol=str(code).zfill(6)
         )
+        row=None
         if df is None or df.empty:
-            return None
-        row = df[df['item'] == '行业']
+            # 再尝试雪球
+            df = safe_call(
+                ak.stock_individual_basic_info_xq,
+                default=None,
+                sleep_sec=0.5,
+                symbol='SH'+str(code) if str(code).startswith('6') else 'SZ'+str(code),
+            )
+            row = df[df['item'] == 'affiliate_industry']
+            if row.empty:
+                return None
+            return str(row.iloc[0]['value'])
+        else:
+            row = df[df['item'] == '行业']
         if row.empty:
             return None
         return str(row.iloc[0]['value'])
@@ -231,6 +276,25 @@ class DataFetcher:
         if df is None or df.empty:
             return pd.DataFrame()
         return df.tail(days).reset_index(drop=True)
+
+
+# ─────────────────────────────────────────────────────────────────
+# CSV 输出
+# ─────────────────────────────────────────────────────────────────
+
+def save_scores_csv(df: pd.DataFrame, output_dir: str = None) -> str:
+    """将评分结果保存到 results/scores/score_{date}.csv，返回文件路径"""
+    if df is None or df.empty:
+        return ''
+    if output_dir is None:
+        base = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        output_dir = os.path.join(base, 'results', 'scores')
+    os.makedirs(output_dir, exist_ok=True)
+    date_str = datetime.date.today().strftime('%Y-%m-%d')
+    fpath = os.path.join(output_dir, f'score_{date_str}.csv')
+    df.to_csv(fpath, index=False, encoding='utf-8-sig')
+    print(f"  [CSV] 结果已写入 → {fpath}")
+    return fpath
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -614,6 +678,7 @@ class StockScorer:
         # 数据获取
         hist_df      = self.fetcher.get_hist(code, days=165)
         current_price = self.fetcher.get_realtime_price(code)
+        # print(self._retime)
         if current_price is None and not hist_df.empty:
             current_price = float(hist_df['收盘'].iloc[-1])
 
@@ -641,11 +706,12 @@ class StockScorer:
         }
 
     # ── 批量评分入口 ───────────────────────────────────────────────
-    def score_list(self, stock_list, interval=1.0):
+    def score_list(self, stock_list, interval=1.0, save=True):
         """
         对股票列表批量评分，返回按总分降序的 DataFrame
         :param stock_list:  股票代码列表（纯 6 位数字字符串）
         :param interval:    每只股票评分后的间隔秒数
+        :param save:        是否自动写入 results/scores/ CSV
         """
         # 预热会话级缓存
         print(">> 预加载实时行情 / 上证指数 / 热榜...")
@@ -697,6 +763,8 @@ class StockScorer:
         df = pd.DataFrame(rows)
         if not df.empty and '总分' in df.columns:
             df = df.sort_values('总分', ascending=False).reset_index(drop=True)
+        if save:
+            save_scores_csv(df)
         return df
 
 
@@ -750,7 +818,9 @@ def run_monitor(stock_list, refresh_minutes=10):
 
 if __name__ == '__main__':
     stock_list = [
-        '000537','601789','002298','002445','605268','002167','600410','600821','002261'
+        '000537','601789','002298',
+        # '002445',
+        # '605268', '002167', '600410', '600821', '002261'
     ]
 
     # ── 单次评分 ──
@@ -762,4 +832,4 @@ if __name__ == '__main__':
     print(df.to_string(index=True))
 
     # ── 实时轮询（取消注释启用，默认 10 分钟刷新一次）──
-    run_monitor(stock_list, refresh_minutes=10)
+    # run_monitor(stock_list, refresh_minutes=10)
