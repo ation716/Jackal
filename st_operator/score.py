@@ -28,6 +28,7 @@ import numpy as np
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from security_data import ChipDistributionAnalyzer
+from crawl import Crawler
 
 
 # ─────────────────────────────────────────────────────────────────
@@ -99,9 +100,12 @@ class DataFetcher:
             return
         self._initialized = True
         self.analyzer = ChipDistributionAnalyzer()
+        self.crawler = Crawler()
         self._sh_cache = None       # 上证指数历史
-        self._hot_cache = None      # 热榜
-        self._realtime_map = {}     # {6位代码: 实时价格}
+        self._hot_cache = None      # 热榜 (df, timestamp)
+        self._hot_cache_ttl = 300    # 热榜缓存有效期（秒），可改为 30
+        self._realtime_map = {}     # {6位代码: 实时价格}（tushare）
+        self._spot_cache  = None    # akshare 全市场实时行情，兜底用
         print("  [DataFetcher] 初始化完成")
 
     def __new__(cls, *args, **kwargs):
@@ -121,23 +125,63 @@ class DataFetcher:
         """批量获取实时行情并缓存到 _realtime_map {code6: price}"""
         symbols = self._gen_ts_symbols(stock_list)
         df = self.analyzer.get_realtime_tick(ts_code=symbols)
-        self._realtime_map = {}
+        new_map = {}
         if df is None or df.empty:
-            print("  [实时行情] 获取失败，价格将回退到历史最新收盘")
-            return
-        for i in range(len(df)):
-            try:
-                ts_code = str(df.iloc[i, 0])   # e.g. '600203.SH'
-                price   = float(df.iloc[i, 6]) # PRICE 列
-                self._realtime_map[ts_code[:6]] = price
-            except Exception:
-                pass
-        # print(self._realtime_map)
+            print("  [实时行情] tushare 获取失败，将依赖 akshare spot 兜底")
+        else:
+            # 用列名定位，避免位置索引在接口变更后取错列
+            code_col  = 'TS_CODE' if 'TS_CODE' in df.columns else df.columns[0]
+            price_col = 'PRICE'   if 'PRICE'   in df.columns else df.columns[6]
+            for i in range(len(df)):
+                try:
+                    ts_code = str(df.iloc[i][code_col])
+                    raw     = df.iloc[i][price_col]
+                    price   = float(raw)
+                    # NaN / 0 均视为无效价格，不写入缓存
+                    if np.isnan(price) or price <= 0:
+                        continue
+                    new_map[ts_code[:6]] = price
+                except Exception as e:
+                    print(f"  [实时行情] {df.iloc[i][code_col][:6]} 解析失败: {e}")
+        self._realtime_map = new_map
+        print(f"  [实时行情] tushare 缓存 {len(new_map)}/{len(stock_list)} 只")
 
 
     def get_realtime_price(self, code):
         """从缓存的实时行情里查价格"""
         return self._realtime_map.get(str(code).zfill(6))
+
+    def prefetch_spot(self, stock_list):
+        """akshare 全市场实时行情，仅保留 stock_list 的价格作为兜底缓存"""
+        df = safe_call(ak.stock_zh_a_spot_em, default=None, sleep_sec=0.5)
+        if df is None or df.empty:
+            print("  [spot行情] akshare 获取失败")
+            return
+        code_col  = '代码'   if '代码'   in df.columns else None
+        price_col = '最新价' if '最新价' in df.columns else None
+        if code_col is None or price_col is None:
+            print("  [spot行情] 列名不符预期，跳过")
+            return
+        need = set(str(c).zfill(6) for c in stock_list)
+        self._spot_cache = (
+            df[df[code_col].isin(need)][[code_col, price_col]]
+            .set_index(code_col)[price_col]
+            .to_dict()
+        )
+        print(f"  [spot行情] akshare 兜底缓存 {len(self._spot_cache)}/{len(stock_list)} 只")
+
+    def get_spot_price(self, code):
+        """从 akshare spot 缓存里取价格（兜底）"""
+        if self._spot_cache is None:
+            return None
+        raw = self._spot_cache.get(str(code).zfill(6))
+        if raw is None:
+            return None
+        try:
+            price = float(raw)
+            return price if not np.isnan(price) and price > 0 else None
+        except Exception:
+            return None
 
     # ── 个股历史日线 ─────────────────────────────────────────────
     def get_hist(self, code, days=165):
@@ -145,31 +189,36 @@ class DataFetcher:
         end = datetime.date.today().strftime('%Y%m%d')
         start_dt = datetime.date.today() - datetime.timedelta(days=int(days * 1.8))
         start = start_dt.strftime('%Y%m%d')
-        # 先东财
-        df = safe_call(
-            ak.stock_zh_a_hist,
-            default=None,
-            sleep_sec=0.5,
-            symbol=str(code).zfill(6),
-            period='daily',
-            start_date=start,
-            end_date=end,
-            adjust=''
-        )
-        # 再新浪
-        if df is None or df.empty:
+        df = None
+        try:
+            # 先东财
             df = safe_call(
-                ak.stock_zh_a_daily,
-                symbol='SH'+str(code) if str(code).startswith('6') else 'SZ'+str(code),
+                ak.stock_zh_a_hist,
+                default=None,
+                sleep_sec=0.5,
+                symbol=str(code).zfill(6),
+                period='daily',
                 start_date=start,
                 end_date=end,
                 adjust=''
             )
+            # 再新浪
+            if df is None or df.empty:
+                df = safe_call(
+                    ak.stock_zh_a_daily,
+                    symbol='SH'+str(code) if str(code).startswith('6') else 'SZ'+str(code),
+                    start_date=start,
+                    end_date=end,
+                    adjust=''
+                )
+        except Exception as e:
+            pass
         # 再腾讯
         if df is None or df.empty:
+            print("东财和新浪都异常")
             df = safe_call(
                 ak.stock_zh_a_hist_tx,
-                symbol='SH' + str(code) if str(code).startswith('6') else 'SZ' + str(code),
+                symbol='sh' + str(code) if str(code).startswith('6') else 'sz' + str(code),
                 start_date=start,
                 end_date=end,
                 adjust=''
@@ -223,23 +272,34 @@ class DataFetcher:
 
     # ── 热榜 ─────────────────────────────────────────────────────
     def get_hot_rank(self):
-        """东财热榜（带缓存）"""
+        """东财热榜（带 TTL 缓存，超过 _hot_cache_ttl 秒自动刷新）"""
+        import time
+        now = time.time()
         if self._hot_cache is not None:
-            return self._hot_cache
+            df, ts = self._hot_cache
+            if now - ts < self._hot_cache_ttl:
+                return df
         df = safe_call(ak.stock_hot_rank_em, default=None, sleep_sec=0.5)
-        self._hot_cache = df
+        if df is None:
+            # 东方财富不稳定，
+            df = safe_call(self.crawler.get_ths_hot_rank, default=None, sleep_sec=0.5)
+        self._hot_cache = (df, now)
         return df
 
     # ── 板块信息 ─────────────────────────────────────────────────
     def get_sector_name(self, code):
         """获取个股所属行业板块名称"""
-        # 先东方财富
-        df = safe_call(
-            ak.stock_individual_info_em,
-            default=None,
-            sleep_sec=0.5,
-            symbol=str(code).zfill(6)
-        )
+        df=None
+        try:
+            # 先东方财富
+            df = safe_call(
+                ak.stock_individual_info_em,
+                default=None,
+                sleep_sec=0.5,
+                symbol=str(code).zfill(6)
+            )
+        except Exception as e:
+            pass
         row=None
         if df is None or df.empty:
             # 再尝试雪球
@@ -263,18 +323,29 @@ class DataFetcher:
         """行业板块历史行情"""
         end = datetime.date.today().strftime('%Y%m%d')
         start = (datetime.date.today() - datetime.timedelta(days=int(days * 2))).strftime('%Y%m%d')
-        df = safe_call(
-            ak.stock_board_industry_hist_em,
-            default=None,
-            sleep_sec=0.5,
-            symbol=sector_name,
-            start_date=start,
-            end_date=end,
-            period='日k',
-            adjust='不复权'
-        )
+        df = None
+        try:
+            df = safe_call(
+                ak.stock_board_industry_hist_em,
+                default=None,
+                sleep_sec=0.5,
+                symbol=sector_name,
+                start_date=start,
+                end_date=end,
+                period='日k',
+                adjust=''
+            )
+        except Exception as e:
+            pass
         if df is None or df.empty:
-            return pd.DataFrame()
+            df = safe_call(
+                ak.stock_board_industry_index_ths,
+                symbol=sector_name,
+                start_date=start,
+                end_date=end
+            )
+            if df is None or df.empty:
+                return pd.DataFrame()
         return df.tail(days).reset_index(drop=True)
 
 
@@ -676,11 +747,17 @@ class StockScorer:
         code = str(code).zfill(6)
 
         # 数据获取
-        hist_df      = self.fetcher.get_hist(code, days=165)
+        hist_df       = self.fetcher.get_hist(code, days=165)
         current_price = self.fetcher.get_realtime_price(code)
-        # print(self._retime)
+        # tushare 可能返回 NaN（停牌/收盘后），需统一当 None 处理
+        if current_price is not None and np.isnan(current_price):
+            current_price = None
+        # 回退1：历史最新收盘
         if current_price is None and not hist_df.empty:
             current_price = float(hist_df['收盘'].iloc[-1])
+        # 回退2：akshare spot 实时行情（prefetch_spot 已预加载）
+        if current_price is None:
+            current_price = self.fetcher.get_spot_price(code)
 
         sh_df       = self.fetcher.get_sh_index(days=165)
         sector_name = self.fetcher.get_sector_name(code)
@@ -716,6 +793,7 @@ class StockScorer:
         # 预热会话级缓存
         print(">> 预加载实时行情 / 上证指数 / 热榜...")
         self.fetcher.prefetch_realtime(stock_list)
+        # self.fetcher.prefetch_spot(stock_list)
         self.fetcher.get_sh_index()
         self.fetcher.get_hot_rank()
         print(f">> 开始对 {len(stock_list)} 只股票评分\n")
@@ -787,9 +865,8 @@ def run_monitor(stock_list, refresh_minutes=10):
             print(f"  第 {round_num} 轮  |  {now_str}")
             print(f"{'='*72}")
 
-            # 清除缓存保证数据新鲜
+            # 清除缓存保证数据新鲜（热榜由 TTL 自动刷新，无需手动清除）
             scorer.fetcher._sh_cache    = None
-            scorer.fetcher._hot_cache   = None
             scorer.fetcher._realtime_map = {}
 
             result_df = scorer.score_list(stock_list, interval=0.8)
