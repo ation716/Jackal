@@ -70,4 +70,3 @@ for i in range(10000):
         print()
     print('-'*15)
 
-# 需要看出承压能力

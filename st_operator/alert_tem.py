@@ -1,3 +1,15 @@
+# -*- coding: utf-8 -*-
+"""
+alert_tem.py — Lightweight Tkinter dialog utilities.
+
+Features:
+  - SimpleDialog.auto_close : show a non-blocking popup that closes automatically
+                               after a given number of seconds; supports an optional
+                               callback executed on close.
+  - SimpleDialog.confirm    : show a blocking yes/no confirmation dialog and return
+                               the user's choice as a bool.
+"""
+
 from typing import Optional, Callable
 import tkinter as tk
 from tkinter import messagebox
@@ -6,18 +18,24 @@ import time
 
 
 class SimpleDialog:
-    """简化的弹窗工具类"""
+    """Lightweight dialog helper built on tkinter."""
 
     @staticmethod
     def auto_close(message: str,
-                   title: str = "提示",
+                   title: str = "Notice",
                    seconds: int = 5,
                    on_close: Optional[Callable] = None):
         """
-        显示自动关闭弹窗
+        Show a non-blocking popup that closes automatically after *seconds*.
 
-        示例:
-            SimpleDialog.auto_close("保存成功！", seconds=3)
+        Runs in a daemon thread so it does not block the caller.
+
+        Parameters
+        ----------
+        message  : text displayed in the popup body
+        title    : window title bar text
+        seconds  : how many seconds before the window auto-closes
+        on_close : optional callback invoked just before the window is destroyed
         """
 
         def show():
@@ -26,7 +44,7 @@ class SimpleDialog:
             root.geometry("600x300")
 
             tk.Label(root, text=message, pady=30).pack()
-            tk.Label(root, text=f"{seconds}秒后关闭").pack()
+            tk.Label(root, text=f"Closing in {seconds} second(s)...").pack()
 
             def close():
                 if on_close:
@@ -40,12 +58,14 @@ class SimpleDialog:
 
     @staticmethod
     def confirm(message: str,
-                title: str = "确认") -> bool:
+                title: str = "Confirm") -> bool:
         """
-        显示确认弹窗
+        Show a blocking yes/no confirmation dialog.
 
-        示例:
-            if SimpleDialog.confirm("确定要删除吗？"):
+        Returns True if the user clicks Yes, False otherwise.
+
+        Example:
+            if SimpleDialog.confirm("Delete this item?"):
                 delete_item()
         """
         root = tk.Tk()
@@ -55,14 +75,6 @@ class SimpleDialog:
         return result
 
 
-# 使用示例
 if __name__ == "__main__":
-    # 自动关闭弹窗（不阻塞主线程）
-    SimpleDialog.auto_close("文件上传成功！", "成功", 3)
-    SimpleDialog.auto_close("长时间弹窗测试", "成功", 30)
+    SimpleDialog.auto_close("Long-running popup test", "Notice", 30)
     time.sleep(40)
-    # 确认弹窗（阻塞直到用户操作）
-    # if SimpleDialog.confirm("确定要退出程序吗？"):
-    #     print("程序退出")
-    # else:
-    #     print("继续运行")

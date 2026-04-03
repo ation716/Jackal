@@ -259,6 +259,11 @@ class ChipDistributionAnalyzer:
     def get_daily_jgcyd(self,symbol):
         return ak.stock_comment_detail_zlkp_jgcyd_em(symbol=symbol)
 
+    def get_fund(self,symbol):
+        return ak.stock_individual_fund_flow(symbol,market='sh' if symbol.startswith('6') else 'sz')
+
+
+
 
 
 # 使用示例
@@ -293,11 +298,12 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-    date='20260317'
+    date='20260402'
     start_date='20251127'
     end_date='20251223'
     analyzer = ChipDistributionAnalyzer()
     name='dmgx'
+    fund=analyzer.get_fund('600644')
     jgcyd=analyzer.get_daily_jgcyd(ts_code)
     # '002632'
     # data=analyzer.get_stock_chip_distribute_detail(ts_code='002632.SZ',start_date=start_date,end_date=end_date)

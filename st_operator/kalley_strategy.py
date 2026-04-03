@@ -1,4 +1,4 @@
-# 基于凯利公式的投资策略
+# Kelly-formula-based investment strategy
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -9,27 +9,27 @@ import akshare as ak
 import pandas as pd
 from datetime import datetime, timedelta
 
-# 中文字体支持
+# Chinese font support for matplotlib
 matplotlib.rcParams['font.sans-serif'] = ['SimHei', 'Microsoft YaHei', 'DejaVu Sans']
 matplotlib.rcParams['axes.unicode_minus'] = False
 
 
-# ───────────────────────── 凯利策略核心函数 ──────────────────────────
+# ───────────────────────── Kelly Strategy Core ──────────────────────────
 
 def kalley1(p, b):
-    """经典凯利  p - (1-p)/b"""
+    """Classic Kelly criterion:  p - (1-p)/b"""
     return p - (1 - p) / b
 
 
 def kalley2(p, r):
-    """零和博弈的凯利 (2p-1)/r"""
+    """Zero-sum Kelly criterion:  (2p-1)/r"""
     if r == 0:
         r = 0.0001
     return (2 * p - 1) / r
 
 
 def kellly_strategy_continues(p_matrix, b_matrix):
-    """凯莉策略（经典凯利）"""
+    """Kelly strategy (classic Kelly)."""
     p_matrix = np.array(p_matrix, dtype=float)
     result = np.zeros_like(p_matrix)
     for i in range(len(p_matrix)):
@@ -47,7 +47,7 @@ def kellly_strategy_continues(p_matrix, b_matrix):
 
 
 def kellly_strategy_continues2(p_matrix, b_matrix):
-    """凯莉策略（零和博弈）"""
+    """Kelly strategy (zero-sum)."""
     p_matrix = np.array(p_matrix, dtype=float)
     result = np.zeros_like(p_matrix)
     for i in range(len(p_matrix)):
@@ -64,7 +64,7 @@ def kellly_strategy_continues2(p_matrix, b_matrix):
 
 
 def continuse_gain(kelly_weight, path, s0):
-    """计算 Kelly 策略资产曲线"""
+    """Compute Kelly strategy equity curve."""
     result = np.zeros(len(path) + 1)
     for i in range(len(result)):
         if i < 2:
@@ -75,27 +75,27 @@ def continuse_gain(kelly_weight, path, s0):
     return result
 
 
-# ───────────────────────── 主分析函数 ──────────────────────────
+# ───────────────────────── Main Analysis Function ──────────────────────────
 
 def analyze_stock(stock_code: str, start_date: str, end_date: str):
     """
-    根据股票代码、起始时间、终止时间进行分析：
-      1. 绘制高斯平滑后的预测曲线（含未来2天预测 + 准确率）
-      2. 绘制凯利策略收益曲线
+    Analyse a stock over the given date range:
+      1. Plot Gaussian-smoothed forecast curve (incl. D+1/D+2 prediction + accuracy)
+      2. Plot Kelly strategy equity curve
 
     Parameters
     ----------
-    stock_code : str   股票代码，如 "600410"
-    start_date : str   起始日期 YYYYMMDD，如 "20250101"
-    end_date   : str   终止日期 YYYYMMDD，如 "20260312"
+    stock_code : str   stock code, e.g. "600410"
+    start_date : str   start date YYYYMMDD, e.g. "20250101"
+    end_date   : str   end date   YYYYMMDD, e.g. "20260312"
     """
-    # ── 1. 拉取历史数据 ──
+    # ── 1. Fetch historical data ──
     df = ak.stock_zh_a_hist(
         symbol=stock_code, period="daily",
         start_date=start_date, end_date=end_date, adjust="qfq"
     )
     if df.empty or len(df) < 10:
-        print(f"[错误] 股票 {stock_code} 在 {start_date}~{end_date} 数据不足（{len(df)} 条）")
+        print(f"[Error] {stock_code} has insufficient data ({len(df)} rows) for {start_date}~{end_date}")
         return None
 
     close_prices = df['收盘'].tolist()
@@ -104,23 +104,23 @@ def analyze_stock(stock_code: str, start_date: str, end_date: str):
     S0 = close_prices[0]
     S_array = np.array(close_prices, dtype=float)
 
-    # ── 2. 高斯自适应平滑 & 历史预测 ──
+    # ── 2. Adaptive Gaussian smoothing & historical forecast ──
     smoother = AdaptiveForwardGaussianSmoother(
         min_sigma=0.3, max_sigma=2.0, base_window_size=7, sensitivity=3
     )
     predict_B, smooth_B, sigmas, windows = smoother.smooth_array(close_prices)
-    # predict_B[i]  ≈ 对 close_prices[i+1] 的预测  (i=0..N-2 有效)
+    # predict_B[i] ≈ prediction for close_prices[i+1]  (valid for i = 0..N-2)
 
-    # ── 3. 预测未来2天 ──
-    # smoother.history 此时包含全部 N 个历史价格
-    pred_day1 = smoother.predict_next()          # D+1 预测
+    # ── 3. Forecast next 2 trading days ──
+    # smoother.history now contains all N historical prices
+    pred_day1 = smoother.predict_next()          # D+1 forecast
     smoother.history.append(pred_day1)
-    pred_day2 = smoother.predict_next()          # D+2 预测（基于 history + pred_day1）
+    pred_day2 = smoother.predict_next()          # D+2 forecast (based on history + pred_day1)
 
-    # ── 4. 尝试获取未来2个交易日的实际价格（用于验证准确率） ──
+    # ── 4. Attempt to fetch actual next-2-day prices for validation ──
     end_dt   = datetime.strptime(end_date, "%Y%m%d")
     next_str = (end_dt + timedelta(days=1)).strftime("%Y%m%d")
-    far_str  = (end_dt + timedelta(days=14)).strftime("%Y%m%d")  # 多留14天保证覆盖2个交易日
+    far_str  = (end_dt + timedelta(days=14)).strftime("%Y%m%d")  # 14-day buffer to cover 2 trading days
 
     future_prices = []
     future_dates  = []
@@ -135,27 +135,27 @@ def analyze_stock(stock_code: str, start_date: str, end_date: str):
     except Exception:
         pass
 
-    # ── 5. 历史预测准确率 ──
-    # gauss_d[i] 预测 S_array[i+1]，共 N-1 对
-    hist_preds  = predict_B[:-1]          # 对 S_array[1..N-1] 的预测
+    # ── 5. Historical forecast accuracy ──
+    # predict_B[i] forecasts S_array[i+1]; N-1 pairs in total
+    hist_preds  = predict_B[:-1]
     hist_actual = S_array[1:]
     hist_acc    = np.clip(1 - np.abs(hist_preds - hist_actual) * 5 / hist_actual, 0, 1)
     hist_acc_sm = np.clip(test_adaptive_smoothing(hist_acc, s=1), 0, 1)
 
-    # 未来2天准确率（仅在有实际数据时计算）
+    # Future 2-day accuracy (only when actual data is available)
     future_acc = []
     for k, pred in enumerate([pred_day1, pred_day2]):
         if k < len(future_prices):
             acc = max(0.0, min(1.0, 1 - abs(pred - future_prices[k]) * 5 / future_prices[k]))
             future_acc.append(acc)
 
-    # ── 6. 凯利策略 ──
+    # ── 6. Kelly strategy ──
     gain_loss_p   = np.clip((predict_B[1:] - predict_B[:-1]) / predict_B[:-1], -0.1, 0.1)
     kelly_weights = kellly_strategy_continues2(hist_acc_sm, gain_loss_p)
     gain_loss_r   = (S_array[1:] - S_array[:-1]) / S_array[:-1]
     assets        = continuse_gain(kelly_weights, gain_loss_r, S0)
 
-    # ── 7. 绘图 ──
+    # ── 7. Plot ──
     _plot_analysis(
         stock_code, start_date, end_date,
         S_array, dates,
@@ -166,26 +166,26 @@ def analyze_stock(stock_code: str, start_date: str, end_date: str):
         kelly_weights, assets, S0
     )
 
-    # ── 8. 控制台摘要 ──
+    # ── 8. Console summary ──
     mean_acc_20  = float(np.mean(hist_acc[-20:]))
     final_val    = assets[-1]
     total_return = (final_val / S0 - 1) * 100
     bh_return    = (S_array[-1] / S0 - 1) * 100
 
     print(f"\n{'='*45}")
-    print(f"  股票 {stock_code}  {start_date} ~ {end_date}  共 {N} 交易日")
+    print(f"  Stock {stock_code}  {start_date} ~ {end_date}  {N} trading days")
     print(f"{'='*45}")
-    print(f"  近20日历史预测准确率均值: {mean_acc_20*100:.1f}%")
-    print(f"\n  未来2天预测:")
+    print(f"  Avg forecast accuracy (last 20 days): {mean_acc_20*100:.1f}%")
+    print(f"\n  Next 2-day forecast:")
     for k, (pred, label) in enumerate([(pred_day1, 'D+1'), (pred_day2, 'D+2')]):
         date_str = future_dates[k] if k < len(future_dates) else label
-        line = f"    {date_str}: 预测={pred:.3f}"
+        line = f"    {date_str}: predicted={pred:.3f}"
         if k < len(future_prices):
-            line += f"  实际={future_prices[k]:.3f}  准确率={future_acc[k]*100:.1f}%"
+            line += f"  actual={future_prices[k]:.3f}  accuracy={future_acc[k]*100:.1f}%"
         print(line)
-    print(f"\n  凯利策略:")
-    print(f"    初始={S0:.3f}  终值={final_val:.3f}  总收益={total_return:+.1f}%")
-    print(f"    买入持有收益: {bh_return:+.1f}%")
+    print(f"\n  Kelly strategy:")
+    print(f"    initial={S0:.3f}  final={final_val:.3f}  total return={total_return:+.1f}%")
+    print(f"    Buy-and-hold return: {bh_return:+.1f}%")
     print(f"{'='*45}\n")
 
     return {
@@ -203,7 +203,7 @@ def analyze_stock(stock_code: str, start_date: str, end_date: str):
     }
 
 
-# ───────────────────────── 绘图辅助函数 ──────────────────────────
+# ───────────────────────── Plot Helper ──────────────────────────
 
 def _plot_analysis(
     stock_code, start_date, end_date,
@@ -225,7 +225,7 @@ def _plot_analysis(
     )
     ax_price, ax_acc, ax_kelly = axes
 
-    # ── X 轴刻度（日期） ──
+    # ── X-axis ticks (dates) ──
     tick_step = max(1, N // 10)
     tick_pos  = list(range(0, N, tick_step))
     if N - 1 not in tick_pos:
@@ -238,31 +238,31 @@ def _plot_analysis(
         future_dates[1] if len(future_dates) > 1 else 'D+2',
     ]
 
-    # ────────── 子图1：价格 + 高斯预测 ──────────
+    # ────────── Panel 1: price + Gaussian forecast ──────────
     ax_price.plot(range(N), S_array, lw=1.5, color='steelblue',
-                  label='实际价格', zorder=3)
+                  label='Actual price', zorder=3)
 
-    # 历史预测曲线：predict_B[i] 对应 close_prices[i+1] → 绘制于 i+1 位置
+    # Historical forecast: predict_B[i] maps to close_prices[i+1] → plotted at i+1
     ax_price.plot(range(1, N), predict_B[:-1], lw=1.2, color='darkorange',
-                  linestyle='--', alpha=0.85, label='高斯预测(历史)', zorder=2)
+                  linestyle='--', alpha=0.85, label='Gaussian forecast (hist)', zorder=2)
 
-    # 高斯平滑曲线（实际平滑值，不偏移）
+    # Gaussian smoothed curve (actual smoothed values, not shifted)
     ax_price.plot(range(N), smooth_B, lw=1, color='mediumpurple',
-                  linestyle=':', alpha=0.6, label='高斯平滑', zorder=2)
+                  linestyle=':', alpha=0.6, label='Gaussian smooth', zorder=2)
 
-    # 未来2天预测线
+    # Next 2-day forecast line
     fut_x = [N - 1, N, N + 1]
     fut_y = [S_array[-1], pred_day1, pred_day2]
     ax_price.plot(fut_x, fut_y, lw=2.5, color='tomato', linestyle='--',
-                  marker='o', markersize=9, label='未来2天预测', zorder=5)
+                  marker='o', markersize=9, label='Forecast (D+1/D+2)', zorder=5)
 
-    # 如果有验证数据，画出来
+    # Plot validation data if available
     if future_prices:
         ax_price.plot(range(N, N + len(future_prices)), future_prices,
                       lw=1.5, color='limegreen', marker='s', markersize=8,
-                      label='实际(验证)', zorder=6)
+                      label='Actual (validation)', zorder=6)
 
-    # 预测值 & 准确率标注
+    # Prediction value & accuracy annotations
     price_range = S_array.max() - S_array.min()
     offset = price_range * 0.06
     for k, (px, py, pred) in enumerate(
@@ -270,7 +270,7 @@ def _plot_analysis(
     ):
         lines = [f'D+{k+1}: {pred:.2f}']
         if k < len(future_acc):
-            lines.append(f'准确率: {future_acc[k]*100:.1f}%')
+            lines.append(f'Accuracy: {future_acc[k]*100:.1f}%')
             color = 'green' if future_acc[k] > 0.7 else ('orange' if future_acc[k] > 0.5 else 'red')
         else:
             color = 'tomato'
@@ -283,51 +283,51 @@ def _plot_analysis(
             bbox=dict(boxstyle='round,pad=0.3', fc='lightyellow', alpha=0.9)
         )
 
-    # 近期历史准确率文字提示
+    # Recent historical accuracy label
     mean_acc_20 = float(np.mean(hist_acc[-20:]))
     ax_price.text(
         0.01, 0.97,
-        f'近20日历史预测准确率: {mean_acc_20*100:.1f}%',
+        f'Avg forecast accuracy (last 20 days): {mean_acc_20*100:.1f}%',
         transform=ax_price.transAxes, fontsize=10, va='top',
         bbox=dict(boxstyle='round', fc='lightyellow', alpha=0.9)
     )
 
     ax_price.set_xticks(tick_pos)
     ax_price.set_xticklabels(tick_labels_price, rotation=45, ha='right', fontsize=7)
-    ax_price.set_title('价格走势 & 高斯平滑预测')
-    ax_price.set_ylabel('价格')
+    ax_price.set_title('Price & Gaussian Smooth Forecast')
+    ax_price.set_ylabel('Price')
     ax_price.legend(loc='upper left', fontsize=9)
     ax_price.grid(True, alpha=0.3)
 
-    # ────────── 子图2：历史预测准确率 ──────────
-    ax_acc.fill_between(range(1, N), hist_acc, alpha=0.3, color='orange', label='单日准确率')
-    ax_acc.plot(range(1, N), hist_acc_sm, lw=1.2, color='darkorange', label='平滑准确率')
-    ax_acc.axhline(0.7, color='green', lw=0.8, linestyle='--', alpha=0.6, label='70%基准')
+    # ────────── Panel 2: historical forecast accuracy ──────────
+    ax_acc.fill_between(range(1, N), hist_acc, alpha=0.3, color='orange', label='Daily accuracy')
+    ax_acc.plot(range(1, N), hist_acc_sm, lw=1.2, color='darkorange', label='Smoothed accuracy')
+    ax_acc.axhline(0.7, color='green', lw=0.8, linestyle='--', alpha=0.6, label='70% baseline')
     ax_acc.set_ylim(0, 1.05)
     ax_acc.set_xticks(tick_pos[:-2])
     ax_acc.set_xticklabels(tick_labels_price[:-2], rotation=45, ha='right', fontsize=7)
-    ax_acc.set_title('历史预测准确率')
-    ax_acc.set_ylabel('准确率')
+    ax_acc.set_title('Historical Forecast Accuracy')
+    ax_acc.set_ylabel('Accuracy')
     ax_acc.legend(loc='lower left', fontsize=8)
     ax_acc.grid(True, alpha=0.3)
 
-    # ────────── 子图3：凯利策略收益 ──────────
+    # ────────── Panel 3: Kelly strategy equity ──────────
     t_asset = np.arange(N)
     ax_kelly.plot(t_asset, assets, lw=1.8, color='mediumseagreen',
-                  label='凯利策略资产', zorder=3)
+                  label='Kelly strategy equity', zorder=3)
     ax_kelly.plot(t_asset, S_array, lw=1, color='steelblue',
-                  linestyle=':', alpha=0.7, label='买入持有(股价)', zorder=2)
+                  linestyle=':', alpha=0.7, label='Buy-and-hold (price)', zorder=2)
     ax_kelly.axhline(S0, color='silver', linestyle='--', lw=0.8, alpha=0.7)
 
     final_val    = assets[-1]
     total_return = (final_val / S0 - 1) * 100
     bh_return    = (S_array[-1] / S0 - 1) * 100
 
-    # 最终值标注
+    # Final value annotation
     xt = max(0, N - N // 5)
     yt = final_val * (0.88 if total_return > 0 else 1.08)
     ax_kelly.annotate(
-        f'终值: {final_val:.2f}\n凯利: {total_return:+.1f}%\n持有: {bh_return:+.1f}%',
+        f'Final: {final_val:.2f}\nKelly: {total_return:+.1f}%\nB&H: {bh_return:+.1f}%',
         xy=(N - 1, final_val),
         xytext=(xt, yt),
         arrowprops=dict(arrowstyle='->', color='mediumseagreen', lw=1.5),
@@ -337,9 +337,9 @@ def _plot_analysis(
 
     ax_kelly.set_xticks(tick_pos[:-2])
     ax_kelly.set_xticklabels(tick_labels_price[:-2], rotation=45, ha='right', fontsize=7)
-    ax_kelly.set_title(f'凯利策略收益曲线  总收益: {total_return:+.1f}%  (买入持有: {bh_return:+.1f}%)')
-    ax_kelly.set_ylabel('资产价值')
-    ax_kelly.set_xlabel('日期')
+    ax_kelly.set_title(f'Kelly Strategy Equity Curve  Total: {total_return:+.1f}%  (B&H: {bh_return:+.1f}%)')
+    ax_kelly.set_ylabel('Asset value')
+    ax_kelly.set_xlabel('Date')
     ax_kelly.legend(loc='upper left', fontsize=9)
     ax_kelly.grid(True, alpha=0.3)
 
@@ -347,7 +347,7 @@ def _plot_analysis(
     plt.show()
 
 
-# ───────────────────────── 入口 ──────────────────────────
+# ───────────────────────── Entry point ──────────────────────────
 
 if __name__ == "__main__":
     analyze_stock("600410", "20250101", "20260312")
