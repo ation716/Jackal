@@ -266,8 +266,8 @@ class DataFetcher:
         return df
 
     # ── Individual stock fund flow ─────────────────────────────────────────────
-    def get_fund_flow(self, code):
-        """Eastmoney individual stock fund flow (last 10 days)"""
+    def get_fund_flow(self, code, days=10):
+        """Eastmoney individual stock fund flow (last *days* trading days)"""
         market = get_market(code)
         df = safe_call(
             ak.stock_individual_fund_flow,
@@ -278,7 +278,7 @@ class DataFetcher:
         )
         if df is None or df.empty:
             return pd.DataFrame()
-        return df.tail(10).reset_index(drop=True)
+        return df.tail(days).reset_index(drop=True)
 
     # ── Chip distribution (akshare → direct crawler → tushare → manual, 4-level fallback) ─
     def get_chip(self, code):
@@ -668,40 +668,162 @@ class StockScorer:
     # ── 4. Large order fund flow score ────────────────────────────────────────
     def score_fund_flow(self, code):
         """
-        Max 15 points (short-term version: heavy recent weighting, windows 5/3/1 days)
-        - Weights: 1-day 40% + 3-day 35% + 5-day 25%
+        资金流入评分，根据 5日流入，3日流入，1日流入情况，打分
+        1，3，5 日的权重分别为 57% / 29% / 14%
+        取 100 日数据，分别计算 3 日累计流入 60 分位，5日累计流入 60 分位，单日流入 60 分位，
+        以这些分位为基准，按比值大小进行适当评分
         """
         w = self.WEIGHTS['fund_flow']
-        df = self.fetcher.get_fund_flow(code)
+        df = self.fetcher.get_fund_flow(code, days=100)
         if df is None or df.empty:
             return {'score': w * 0.5, 'detail': 'Fund flow data insufficient'}
 
-        candidate_cols = ['Main net inflow', 'Main net', 'Super large net inflow', 'Large net inflow', 'Main net inflow-net']
+        candidate_cols = ['主力净流入-净额', '超大单净流入-净额', '大单净流入-净额']
         inflow_col = next((c for c in candidate_cols if c in df.columns), None)
         if inflow_col is None:
             return {'score': w * 0.5, 'detail': f'Net inflow column not found, available: {df.columns.tolist()}'}
 
         inflow = pd.to_numeric(df[inflow_col], errors='coerce').fillna(0)
-        flow_5  = float(inflow.tail(5).sum())
-        flow_3  = float(inflow.tail(3).sum())
-        flow_1  = float(inflow.iloc[-1]) if len(inflow) > 0 else 0.0
 
-        def _flow_score(val, scale):
-            """Continuous score: opt=[0.5,1.5]×scale, exponential decay on both sides"""
-            ratio = val / scale if scale != 0 else 0
+        # 当前值
+        flow_5 = float(inflow.tail(5).sum())
+        flow_3 = float(inflow.tail(3).sum())
+        flow_1 = float(inflow.iloc[-1]) if len(inflow) > 0 else 0.0
+
+        # 降级基准（当数据不足时使用）
+        # 注意：这里的值会根据市值分档进一步调整
+        FALLBACK_SCALES = {1: 5e6, 3: 8e6, 5: 1.5e7}
+
+        def _get_market_cap_factor(self, code):
+            """获取市值系数，用于降级时的基准调整"""
+            try:
+                # 获取流通市值（单位：元）
+                market_cap = self.fetcher.get_float_market_cap(code)
+                if market_cap is None or market_cap <= 0:
+                    return 1.0
+                # 以100亿为基准
+                return max(0.3, min(3.0, market_cap / 1e10))
+            except:
+                return 1.0
+
+        def _get_quantile_scale(self, series, period_days, target_quantile=0.6, min_history=20):
+            """
+            从股票自身历史分布中获取动态基准
+
+            参数:
+                series: 每日净流入序列
+                period_days: 周期天数（1/3/5）
+                target_quantile: 目标分位数，默认0.6（60%分位数）
+                min_history: 最少需要的历史数据量
+
+            返回:
+                scale: 动态基准值
+            """
+            # 计算滚动累计（period_days=1时不需要滚动）
+            if period_days == 1:
+                rolling = series.copy()
+            else:
+                rolling = series.rolling(period_days).sum().dropna()
+
+            # 检查数据量是否足够
+            if len(rolling) < min_history:
+                # 数据不足，使用降级基准
+                fallback = FALLBACK_SCALES[period_days]
+                # 如果有市值信息，按市值调整降级基准
+                if hasattr(self, '_get_market_cap_factor'):
+                    factor = self._get_market_cap_factor(self, code)  # 注意这里的code需要传入
+                    return fallback * factor
+                return fallback
+
+            # 计算分位数
+            scale = float(rolling.quantile(target_quantile))
+
+            # 处理异常情况
+            # 1. 如果基准为负数（说明该股票历史上持续净流出），使用中位数或降级基准
+            if scale <= 0:
+                # 尝试用正数部分的中位数
+                positive_vals = rolling[rolling > 0]
+                if len(positive_vals) >= min_history // 2:
+                    scale = float(positive_vals.quantile(0.5))
+                else:
+                    # 全部为负，使用绝对值的中位数作为基准（但方向为负）
+                    scale = float(rolling.quantile(0.5))
+                    # 如果还是负数，使用降级基准
+                    if scale <= 0:
+                        fallback = FALLBACK_SCALES[period_days]
+                        if hasattr(self, '_get_market_cap_factor'):
+                            factor = self._get_market_cap_factor(self, code)
+                            scale = fallback * factor
+                        else:
+                            scale = fallback
+
+            # 2. 设置合理范围，避免极端值（100万 ~ 10亿）
+            scale = max(scale, 1e6)
+            scale = min(scale, 1e9)
+
+            return scale
+
+        def _flow_score( val, scale):
+            """
+            连续评分函数
+            将 val/scale 的比值映射到 [0.5, 1.5] 区间
+
+            当 val = scale（比值=1）时，得分为1.0（中性）
+            当 val > scale 时，得分 > 1.0（加分），上限1.5
+            当 val < scale 时，得分 < 1.0（减分），下限0.5
+
+            使用指数衰减的非对称设计：
+            - 左侧（流出）惩罚更重（right_k=0.5）
+            - 右侧（流入）奖励更温和（left_k=1.5）
+            """
+            if scale == 0:
+                return 1.0
+
+            ratio = val / scale
+
+            # 限制比值范围，避免极端值过度影响
+            # 最大比值限制为3.0（超过3.0不再额外加分）
+            # 最小比值限制为0.33（低于0.33不再额外减分）
+            ratio = max(0.33, min(3.0, ratio))
+
+            # 使用 range_score 函数（假设已定义）
+            # 参数：ratio, 下限, 上限, 左侧斜率, 右侧斜率
             return range_score(ratio, 0.5, 1.5, left_k=1.5, right_k=0.5)
 
-        s5  = _flow_score(flow_5,  1.5e7)   # 5-day baseline 15 million
-        s3  = _flow_score(flow_3,  8e6)     # 3-day baseline 8 million
-        s1  = _flow_score(flow_1,  5e6)     # 1-day baseline 5 million
+        # 计算各周期的动态基准
+        scale_5 = _get_quantile_scale(self, inflow, 5, target_quantile=0.6)
+        scale_3 = _get_quantile_scale(self, inflow, 3, target_quantile=0.6)
+        scale_1 = _get_quantile_scale(self, inflow, 1, target_quantile=0.6)
 
-        # Short-term values recent: 1-day 40% + 3-day 35% + 5-day 25%
-        combined = s1 * 0.40 + s3 * 0.35 + s5 * 0.25
+        # 计算各周期的评分系数
+        s5 = _flow_score(flow_5, scale_5)
+        s3 = _flow_score(flow_3, scale_3)
+        s1 = _flow_score(flow_1, scale_1)
+
+        # 权重：1日57% + 3日29% + 5日14%（基于指数衰减 λ=0.35）
+        combined = s1 * 0.57 + s3 * 0.29 + s5 * 0.14
         score = round(w * combined, 2)
-        detail = (f"5-day main net={flow_5/1e4:.0f}万, "
-                  f"3-day={flow_3/1e4:.0f}万, 1-day={flow_1/1e4:.0f}万")
-        return {'score': score, 'detail': detail,
-                'flow_5d': flow_5, 'flow_3d': flow_3, 'flow_1d': flow_1}
+
+        # 详细输出（包含基准信息，便于调试）
+        detail = (f"当前(5d/3d/1d): {flow_5 / 1e4:.0f}万/{flow_3 / 1e4:.0f}万/{flow_1 / 1e4:.0f}万 | "
+                  f"基准(5d/3d/1d): {scale_5 / 1e4:.0f}万/{scale_3 / 1e4:.0f}万/{scale_1 / 1e4:.0f}万 | "
+                  f"系数(5d/3d/1d): {s5:.2f}/{s3:.2f}/{s1:.2f} | "
+                  f"综合: {combined:.2f} → 得分: {score}")
+
+        return {
+            'score': score,
+            'detail': detail,
+            'flow_5d': flow_5,
+            'flow_3d': flow_3,
+            'flow_1d': flow_1,
+            'scale_5d': scale_5,
+            'scale_3d': scale_3,
+            'scale_1d': scale_1,
+            'score_5d': s5,
+            'score_3d': s3,
+            'score_1d': s1,
+            'combined': combined
+        }
 
     # ── 5. Chip distribution score ────────────────────────────────────────────
     def score_chip(self, code):
@@ -823,10 +945,9 @@ class StockScorer:
             return {'score': w * 0.4, 'detail': 'Hot list data insufficient', 'rank': None}
 
         code = str(code).zfill(6)
-        code_col = 'Code' if 'Code' in df.columns else '代码'
+        code_col = 'Code' if 'Code' in df.columns else 'code'
         if code_col is None:
             return {'score': w * 0.4, 'detail': 'Hot list column mismatch', 'rank': None}
-
         row = df[df[code_col] == code]
         if row.empty:
             return {'score': 0.0, 'detail': 'Not on hot list', 'rank': None}
@@ -1072,8 +1193,10 @@ class StockScorer:
         code = str(code).zfill(6)
 
         # Data fetching
-        hist_df       = self.fetcher.get_hist(code, days=80)
-        current_price = self.fetcher.get_realtime_price(code)
+        hist_df       = self.fetcher.get_hist(code, days=80)  # data everyday
+        ts_code = self.fetcher.analyzer.normal_ts_code(code)
+        _tick = self.fetcher.analyzer.get_realtime_tick(ts_code)
+        current_price = float(_tick['PRICE'].iloc[0]) if _tick is not None and not _tick.empty else None
         if current_price is not None and np.isnan(current_price):
             current_price = None
         if current_price is None and not hist_df.empty:
@@ -1224,34 +1347,84 @@ def run_monitor(stock_list, refresh_minutes=10):
 # ─────────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
-    stock_list = [
-        # '000537','601789','002298',
-        # '002445',
-        # '605268', '002167',
-        # '600410', '600821', '002261'
-        # '605271','000020','600396'
-        # xydz,shfa,hdln
-        # '600410'
-        # hstc
-        # '603803'
-        # rskd
-        # '603687'
-        # dsd
-        # '002407'
-        # dfd
-        # '600645','603716','000815'
-        # zyxh,slyl,mly
-        # '000815'
-        '600396'
-    ]
+    TEST_CODE = '600396'   # 修改此处切换调试股票
 
-    # ── Single scoring ──
-    scorer = StockScorer()
-    df = scorer.score_list(stock_list)
-    print("\n" + "=" * 72)
-    print("  Final Scoring Results")
-    print("=" * 72)
-    print(df.to_string(index=True))
+    scorer  = StockScorer()
+    fetcher = scorer.fetcher
 
-    # ── Real-time polling (uncomment to enable, default 10-minute refresh) ──
-    # run_monitor(stock_list, refresh_minutes=10)
+    print(f"\n{'='*64}")
+    print(f"  调试模式 | 股票: {TEST_CODE}")
+    print(f"{'='*64}\n")
+
+    # ── 预加载公共数据（各函数复用）──────────────────────────────
+    print(">> 加载公共数据...")
+    hist_df     = fetcher.get_hist(TEST_CODE, days=80)
+    sh_df       = fetcher.get_sh_index(days=80)
+    sector_name = fetcher.get_sector_name(TEST_CODE)
+    ts_code     = fetcher.analyzer.normal_ts_code(TEST_CODE)
+    _tick       = fetcher.analyzer.get_realtime_tick(ts_code)
+    current_price = (float(_tick['PRICE'].iloc[0])
+                     if _tick is not None and not _tick.empty else None)
+    if current_price is not None and np.isnan(current_price):
+        current_price = None
+    if current_price is None and not hist_df.empty:
+        current_price = float(hist_df['Close'].iloc[-1])
+    fetcher.get_hot_rank()
+    fetcher.get_limit_up_pool()
+    print(f"   hist rows={len(hist_df)}, price={current_price}, sector={sector_name}\n")
+
+    def _show(name, result):
+        score  = result.get('score', '?')
+        detail = result.get('detail', '')
+        extras = {k: v for k, v in result.items() if k not in ('score', 'detail')}
+        print(f"  score = {score}")
+        print(f"  detail: {detail}")
+        if extras:
+            print(f"  extras: {extras}")
+        print()
+
+    # ── 1. 突破强度 ──────────────────────────────────────────────
+    print("─── 1. score_breakout ───────────────────────────────────")
+    _show('breakout', scorer.score_breakout(hist_df, current_price))
+
+    # ── 2. 近期涨幅 ──────────────────────────────────────────────
+    print("─── 2. score_recent_change ──────────────────────────────")
+    _show('recent_change', scorer.score_recent_change(hist_df))
+
+    # ── 3. 相对强度 ──────────────────────────────────────────────
+    print("─── 3. score_relative_strength ──────────────────────────")
+    _show('relative_strength', scorer.score_relative_strength(hist_df, sh_df, sector_name))
+
+    # ── 4. 资金流向 ──────────────────────────────────────────────
+    print("─── 4. score_fund_flow ──────────────────────────────────")
+    _show('fund_flow', scorer.score_fund_flow(TEST_CODE))
+
+    # ── 5. 筹码分布 ──────────────────────────────────────────────
+    print("─── 5. score_chip ───────────────────────────────────────")
+    _show('chip', scorer.score_chip(TEST_CODE))
+
+    # ── 6. 技术指标 ──────────────────────────────────────────────
+    print("─── 6. score_technical ──────────────────────────────────")
+    _show('technical', scorer.score_technical(hist_df))
+
+    # ── 7. 热榜排名 ──────────────────────────────────────────────
+    print("─── 7. score_hot_rank ───────────────────────────────────")
+    _show('hot_rank', scorer.score_hot_rank(TEST_CODE))
+
+    # ── 8. 封板质量（仅涨停股有效，非涨停返回 0）────────────────
+    print("─── 8. score_seal_quality ───────────────────────────────")
+    _show('seal_quality', scorer.score_seal_quality(TEST_CODE, hist_df))
+
+    # ── 9. 板块强度 ──────────────────────────────────────────────
+    print("─── 9. score_sector_strength ────────────────────────────")
+    _show('sector_strength', scorer.score_sector_strength(TEST_CODE, sector_name))
+
+    # ── 10. 连板层级（仅涨停股有效，非涨停返回 0）───────────────
+    print("─── 10. score_consec_limit ──────────────────────────────")
+    _show('consec_limit', scorer.score_consec_limit(TEST_CODE, hist_df))
+
+    # ── 汇总 ─────────────────────────────────────────────────────
+    print(f"{'='*64}")
+    print("  各维度得分汇总（完整评分请用 scorer.score_stock(code)）")
+    print(f"{'='*64}")
+    # scorer.score_list([TEST_CODE])   # 取消注释可跑完整批量评分
