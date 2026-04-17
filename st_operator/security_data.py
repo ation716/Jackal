@@ -18,8 +18,9 @@ change	float	涨跌额
 pct_chg	float	涨跌幅 【基于除权后的昨收计算的涨跌幅：（今收-除权昨收）/除权昨收 】
 vol	float	成交量 （手）
 amount	float	成交额 （千元）
-
 """
+import json
+import os
 import time
 
 import tushare as ts
@@ -95,7 +96,7 @@ class ChipDistributionAnalyzer:
         """
 
         try:
-            # 获取日线行情
+            # 获取筹码分布
             df = self.pro.cyq_chips(ts_code=ts_code, start_date=start_date, end_date=end_date)
             return df
         except Exception as e:
@@ -120,14 +121,10 @@ class ChipDistributionAnalyzer:
         weight_avg	float	Y
         winner_rate	float	Y
         """
-        try:
-            # 获取筹码分布数据
-            ts_code = self.normal_ts_code(ts_code)
-            df = self.pro.cyq_perf(ts_code=ts_code, start_date=start_date, end_date=end_date)
-            return df
-        except Exception as e:
-            print(f"获取数据失败: {e}")
-            return None
+        # 获取筹码分布数据
+        ts_code = ts_code if len(ts_code)>6 else self.normal_ts_code(ts_code)
+        df = self.pro.cyq_perf(ts_code=ts_code, start_date=start_date, end_date=end_date)
+        return df
 
     def get_stock_chip_akshare(self,ts_code,qfq=""):
         """akshare 的筹码分布"""
@@ -149,6 +146,34 @@ class ChipDistributionAnalyzer:
         except Exception as e:
             print(f"获取数据失败: {e}")
             return None
+
+
+    def get_stock_basic(self, code):
+        # df = self.pro.stock_basic(ts_code=code, fields='ts_code,industry')
+
+        # 模拟数据
+        data = {
+            'ts_code': ['000001.SZ', '000002.SZ', '000004.SZ'],
+            'industry': ['银行', '全国地产', '生物制药'],
+        }
+        df = pd.DataFrame(data)
+
+        # 转换为所需格式：{ '000001': '银行', '000002': '全国地产', ... }
+        industry_dict = {
+            row['ts_code'].split('.')[0]: row['industry']
+            for _, row in df.iterrows()
+        }
+
+        # 保存路径（与之前逻辑一致）
+        current_dir = os.path.dirname(__file__)
+        save_path = os.path.join(current_dir, 'data', 'industry.json')
+        os.makedirs(os.path.dirname(save_path), exist_ok=True)
+
+        # 直接保存字典（JSON 可序列化）
+        with open(save_path, 'w', encoding='utf-8') as f:
+            json.dump(industry_dict, f, ensure_ascii=False, indent=2)
+
+        return df  # 或返回 industry_dict，视您需求而定
 
     def get_report_rc(self, ts_code, report_date=None,start_date=None, end_date=None):
         """券商预测数据
@@ -298,7 +323,7 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-    date='20260402'
+    date='20260417'
     start_date='20251127'
     end_date='20251223'
     analyzer = ChipDistributionAnalyzer()

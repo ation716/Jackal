@@ -1,23 +1,6 @@
-# 一个新的获取股票数据的库 tushare, 目前部分接口有积分限制, 这里只用来获取筹码分布信息
 """
-tushare 官方文档 https://tushare.pro/document/2?doc_id=27
-常用接口:
-
-1. 日线行情
-df = pro.daily(ts_code='000001.SZ,600000.SH', start_date='20180701', end_date='20180718')
-返回字段
-
-ts_code	str	股票代码
-trade_date	str	交易日期
-open	float	开盘价
-high	float	最高价
-low	float	最低价
-close	float	收盘价
-pre_close	float	昨收价【除权价，前复权】
-change	float	涨跌额
-pct_chg	float	涨跌幅
-vol	float	成交量 （手）
-amount	float	成交额 （千元）
+使用 akshare， tushare，baostock 获取证券数据
+tushare code 需要后面接 .SH 或 .SZ
 """
 import json
 import os
@@ -29,6 +12,7 @@ import pandas as pd
 import numpy as np
 import matplotlib.pyplot as plt
 from enum import Enum
+import baostock as bs
 
 
 class SecurityFileds(Enum):
@@ -60,7 +44,7 @@ class ChipDistributionAnalyzer:
         初始化 Tushare Pro API。
 
         参数:
-            token (str): tushare token，默认使用内置 token。
+             token (str): tushare token，默认使用内置 token。
 
         注册地址：https://tushare.pro/register
         """
@@ -68,6 +52,20 @@ class ChipDistributionAnalyzer:
             token = "1bf9b910cdda6f0cd856f55b97c1c1419860237f7be8156aacac3259"
         ts.set_token(token)
         self.pro = ts.pro_api(token)
+        self._bs_logged_in = False
+
+    def __del__(self):
+        """对象销毁时登出 baostock"""
+        if self._bs_logged_in:
+            bs.logout()
+
+    def _bs_login(self):
+        """内部方法：登录 baostock（仅登录一次）"""
+        if not self._bs_logged_in:
+            lg = bs.login()
+            if lg.error_code != '0':
+                raise Exception(f"baostock 登录失败: {lg.error_msg}")
+            self._bs_logged_in = True
 
     def normal_ts_code(self, ts_code):
         """
@@ -100,7 +98,7 @@ class ChipDistributionAnalyzer:
             DataFrame，列：ts_code, trade_date, open, high, low, close, pre_close,
                           change, pct_chg, vol, amount
         """
-        ts_code = self.normal_ts_code(ts_code)
+        ts_code = ts_code if len(ts_code) > 6 else self.normal_ts_code(ts_code)
         df = self.pro.daily(ts_code=ts_code, start_date=start_date, end_date=end_date)
         return df
 
@@ -116,6 +114,7 @@ class ChipDistributionAnalyzer:
         返回示例:
             DataFrame，列：ts_code, trade_date, price, percent
         """
+        ts_code = ts_code if len(ts_code) > 6 else self.normal_ts_code(ts_code)
         df = self.pro.cyq_chips(ts_code=ts_code, start_date=start_date, end_date=end_date)
         return df
 
@@ -163,10 +162,11 @@ class ChipDistributionAnalyzer:
         返回示例:
             DataFrame，列：ts_code, trade_date, price, percent
         """
+        ts_code = ts_code if len(ts_code) > 6 else self.normal_ts_code(ts_code)
         df = self.pro.cyq_chips(ts_code=ts_code, start_date=start_date, end_date=end_date)
         return df
 
-    def get_stock_basic(self, code):
+    def get_stock_basic(self, ts_code):
         """
         获取股票基本信息（代码和所属行业）。
 
@@ -177,7 +177,8 @@ class ChipDistributionAnalyzer:
             DataFrame，列：ts_code, industry
             示例行：('000001.SZ', '银行')
         """
-        df = self.pro.stock_basic(ts_code=code, fields='ts_code,industry')
+        ts_code = ts_code if len(ts_code) > 6 else self.normal_ts_code(ts_code)
+        df = self.pro.stock_basic(ts_code=ts_code, fields='ts_code,industry')
         return df
 
     def get_report_rc(self, ts_code, report_date=None, start_date=None, end_date=None):
@@ -407,6 +408,65 @@ class ChipDistributionAnalyzer:
         """
         market = 'sh' if symbol.startswith('6') else 'sz'
         return ak.stock_individual_fund_flow(symbol, market=market)
+
+    def get_daily_bs(self, symbol, start_date, end_date, adjustflag='3', frequency='d'):
+        """
+        通过 baostock 获取个股日线数据（支持复权）。
+
+        参数:
+            symbol (str): 股票代码，支持6位数字（如 '600000'）或带后缀格式（如 '600000.SH'）。
+            start_date (str): 开始日期，格式 'YYYYMMDD'，如 '20240101'。
+            end_date (str): 结束日期，格式 'YYYYMMDD'，如 '20240131'。
+            adjustflag (str): 复权类型，'1'后复权，'2'前复权，'3'不复权，默认'3'。
+            frequency (str): 频率，'d'日线，'w'周线，'m'月线，'5'5分钟线等，默认'd'。
+
+        返回:
+            pd.DataFrame: 包含字段 date, open, high, low, close, volume, amount, adjustflag 等。
+        """
+        # 登录
+        self._bs_login()
+
+        # 标准化股票代码为 baostock 格式：sh.600000 或 sz.000001
+        code = symbol.upper()
+        if code.endswith('.SH'):
+            code = code.replace('.SH', '')
+            bs_code = f"sh.{code}"
+        elif code.endswith('.SZ'):
+            code = code.replace('.SZ', '')
+            bs_code = f"sz.{code}"
+        else:
+            # 6位数字，根据首位判断市场
+            if code.startswith('6'):
+                bs_code = f"sh.{code}"
+            else:
+                bs_code = f"sz.{code}"
+
+        # 日期格式转换：20240101 -> 2024-01-01
+        start = f"{start_date[:4]}-{start_date[4:6]}-{start_date[6:8]}"
+        end = f"{end_date[:4]}-{end_date[4:6]}-{end_date[6:8]}"
+
+        # 请求数据
+        rs = bs.query_history_k_data_plus(
+            code=bs_code,
+            fields="date,open,high,low,close,volume,amount,adjustflag",
+            start_date=start,
+            end_date=end,
+            frequency=frequency,
+            adjustflag=adjustflag
+        )
+
+        # 将结果转为 DataFrame
+        data_list = []
+        while rs.next():
+            data_list.append(rs.get_row_data())
+        if not data_list:
+            return pd.DataFrame()  # 无数据时返回空 DataFrame
+
+        df = pd.DataFrame(data_list, columns=rs.fields)
+        # 转换数据类型
+        for col in ['open', 'high', 'low', 'close', 'volume', 'amount']:
+            df[col] = pd.to_numeric(df[col], errors='coerce')
+        return df
 
 
 if __name__ == '__main__':

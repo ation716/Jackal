@@ -7,25 +7,33 @@ import os
 import sys
 import pickle
 from pathlib import Path
-
+from basic_s import ChipDistributionAnalyzer as Analyzer
 import numpy as np
 import pandas as pd
 from scipy.stats import gaussian_kde
 from sklearn.linear_model import LinearRegression
 
+"""
+我现在要根据一只A股主板股票最近 90 天的数据 拟合出次日 的涨幅概率分布函数
+获得的历史数据有
+1. 90 日每日收盘价，开盘价，当日最高价，当日最低价
+2. 所在板块最近 10 日板块指数数据，同板块涨停个股数量，跌停个股数量
+3. 上证指数 15 日数据
+需要给出次日涨幅概率分布函数，打印并保存到文件，次日数据更新后根据新的历史数据（时间窗口需要你推荐，或者推荐一个动态时间窗口方法）持续修正分布函数
+"""
 
-def fit_distribution(price_series, sector_ratio_series, index_ret_series,
+def fit_distribution(price_series, sector_ret_series, index_ret_series,
                      half_life=20, bandwidth='silverman'):
     """
     price_series: 最近M个交易日的收盘价 (Series, index为日期)
-    sector_ratio_series: 对应日期的板块涨停比 (0~1)
+    sector_ret_series: 对应日期的板块日涨幅 (float, pct_change)
     index_ret_series: 对应日期的上证指数日涨幅
-    返回: dict 包含 'kde', 'beta', 'residuals', 'last_cond_mean' 等
+    返回: dict 包含 'kde', 'regressor', 'residuals', 'cond_mean', 'last_date'
     """
     # 1. 计算个股日涨幅
     ret = price_series.pct_change().dropna().values  # shape (N,)
     # 对齐数据（删除第一天，因为没有涨幅）
-    sector = sector_ratio_series.iloc[1:].values
+    sector = sector_ret_series.iloc[1:].values
     index_ret = index_ret_series.iloc[1:].values
     N = len(ret)
 
@@ -60,7 +68,7 @@ def fit_distribution(price_series, sector_ratio_series, index_ret_series,
     kde_sk.fit(resid.reshape(-1, 1), sample_weight=weights)
 
     # 5. 记录最新条件均值（用于次日预测）
-    last_sector = sector_ratio_series.iloc[-1]
+    last_sector = sector_ret_series.iloc[-1]
     last_index_ret = index_ret_series.iloc[-1]
     cond_mean = reg.predict([[last_index_ret, last_sector]])[0]
 
@@ -93,8 +101,8 @@ def predict_distribution(model, n_points=1000):
 
     result = pd.DataFrame({
         'return': ret_grid,
-        'pdf': pdf_ret,
-        'cdf': cdf_ret
+        'pdf': pdf_ret, # 概率密度
+        'cdf': cdf_ret # 累计分布
     })
     return result
 
@@ -107,131 +115,51 @@ def save_distribution(result, filepath='dist_next_day.csv'):
 def update_model(new_price, new_sector_ratio, new_index_ret, old_model,
                  max_history_days=200, half_life=20):
     """
-    每日收盘后调用，更新模型
-    new_price: 当日收盘价
-    new_sector_ratio: 当日板块涨停比
-    new_index_ret: 当日上证指数涨幅
-    old_model: 之前保存的模型字典
-    max_history_days: 最多保留多少天数据（防止无限增长）
+    每日收盘后调用，将新数据追加到历史序列并重新拟合模型。
+
+    new_price:        当日收盘价（float）
+    new_sector_ratio: 当日板块涨幅（float，pct_change 格式）
+    new_index_ret:    当日上证指数涨幅（float，pct_change 格式）
+    old_model:        之前 fit_distribution 返回的模型字典，
+                      需额外携带 '_price_series'、'_sector_series'、'_index_series' 三个历史 Series
+    max_history_days: 滑动窗口上限，超出时丢弃最早数据
+    返回: 新模型字典（同 fit_distribution 格式，同样携带三个历史 Series）
     """
-    # 将新数据追加到历史序列（需要维护外部序列，这里仅示意逻辑）
-    # 实际使用中，你需要维护三个全局Series，每次追加新数据
-    # 然后重新调用 fit_distribution
-    # 此处简化为重新拟合的伪代码
-    pass
+    # 1. 取出历史序列
+    price_s  = old_model['_price_series'].copy()
+    sector_s = old_model['_sector_series'].copy()
+    index_s  = old_model['_index_series'].copy()
+
+    # 2. 推断新日期（上一个日期 +1 个交易日，简单用 +1 天；实际可传入日期参数）
+    last_date = price_s.index[-1]
+    new_date  = last_date + pd.Timedelta(days=1)
+
+    # 3. 追加新数据
+    price_s  = pd.concat([price_s,  pd.Series([new_price],        index=[new_date])])
+    sector_s = pd.concat([sector_s, pd.Series([new_sector_ratio], index=[new_date])])
+    index_s  = pd.concat([index_s,  pd.Series([new_index_ret],    index=[new_date])])
+
+    # 4. 滑动窗口裁剪（保留最近 max_history_days 条）
+    if len(price_s) > max_history_days:
+        price_s  = price_s.iloc[-max_history_days:]
+        sector_s = sector_s.iloc[-max_history_days:]
+        index_s  = index_s.iloc[-max_history_days:]
+
+    # 5. 重新拟合
+    new_model = fit_distribution(price_s, sector_s, index_s, half_life=half_life)
+
+    # 6. 将历史序列挂回新模型，供下次调用
+    new_model['_price_series']  = price_s
+    new_model['_sector_series'] = sector_s
+    new_model['_index_series']  = index_s
+
+    return new_model
 
 
-# ─── 测试数据管理 ──────────────────────────────────────────────────────────────
-_HERE = Path(__file__).parent
-_ROOT = _HERE.parent
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-
-TEST_STOCKS = ['000678', '600396']
-_DATA_DIR = _HERE / 'test_data'
-_DATA_FILE = _DATA_DIR / 'fixture.pkl'
-_START = '20240101'
-_END = '20241231'
 
 
-def _fetch_data():
-    """从网络拉取实验数据并持久化到 test_data/fixture.pkl"""
-    import akshare as ak
-    from skl_predict.basic_s import ChipDistributionAnalyzer
 
-    _DATA_DIR.mkdir(exist_ok=True)
-    ana = ChipDistributionAnalyzer()
-    ds = {}
-
-    for sym in TEST_STOCKS:
-        print(f"[fetch] {sym} 日线...")
-        df = ana.get_daily_ak(sym, _START, _END)
-        df['日期'] = pd.to_datetime(df['日期'])
-        df = df.set_index('日期').sort_index()
-        ds[sym] = df
-        print(f"  {sym}: {len(df)} 条  {df.index[0].date()} ~ {df.index[-1].date()}")
-
-    print("[fetch] 上证指数...")
-    idx = ak.stock_zh_index_daily(symbol='sh000001')
-    idx['date'] = pd.to_datetime(idx['date'])
-    idx = idx.set_index('date').sort_index().loc[_START:_END]
-    ds['index'] = idx
-    print(f"  上证: {len(idx)} 条")
-
-    for sym in TEST_STOCKS:
-        print(f"[fetch] {sym} 筹码...")
-        try:
-            chip = ana.get_stock_chip_akshare(sym)
-            chip['日期'] = pd.to_datetime(chip['日期'])
-            chip = chip.set_index('日期').sort_index()
-            ds[f'{sym}_chip'] = chip
-            print(f"  {sym} 筹码: {len(chip)} 条")
-        except Exception as e:
-            print(f"  {sym} 筹码失败: {e}")
-            ds[f'{sym}_chip'] = pd.DataFrame()
-
-    with open(_DATA_FILE, 'wb') as f:
-        pickle.dump(ds, f)
-    print(f"[save] → {_DATA_FILE}")
-    return ds
-
-
-def load_fixture(force_refresh=False):
-    """加载测试数据；本地有缓存则直接读取，否则重新拉取"""
-    if not force_refresh and _DATA_FILE.exists():
-        print(f"[load] 使用缓存 {_DATA_FILE}")
-        with open(_DATA_FILE, 'rb') as f:
-            return pickle.load(f)
-    return _fetch_data()
-
-
-def _build_inputs(ds, symbol, lookback=120):
-    """
-    构造 fit_distribution 所需的三个 Series（日期对齐）
-    sector_ratio_series: 测试用个股5日均涨幅代替板块涨停比
-    """
-    stock = ds[symbol].tail(lookback).copy()
-    idx = ds['index']
-    dates = stock.index.intersection(idx.index)
-    stock = stock.loc[dates]
-    idx_a = idx.loc[dates]
-
-    price_s = stock['收盘'].astype(float)
-    index_ret_s = idx_a['close'].pct_change().fillna(0)
-    # 简化板块涨停比：用个股涨跌幅5日滚动均值作为代理
-    sector_s = (stock['涨跌幅'].astype(float) / 100.0).rolling(5, min_periods=1).mean().fillna(0)
-    return price_s, sector_s, index_ret_s
 
 
 if __name__ == '__main__':
-    # ── 1. 加载/获取数据 ──────────────────────────────────────────────────────
-    # 改 force_refresh=True 可强制重新拉取网络数据
-    ds = load_fixture(force_refresh=False)
-
-    for sym in TEST_STOCKS:
-        print(f"\n{'─' * 50}")
-        print(f"▶ {sym}")
-        price_s, sector_s, index_s = _build_inputs(ds, sym)
-        print(f"  日期范围: {price_s.index[0].date()} ~ {price_s.index[-1].date()}  ({len(price_s)} 天)")
-
-        # ── 2. 拟合分布 ───────────────────────────────────────────────────────
-        model = fit_distribution(price_s, sector_s, index_s)
-        print(f"  条件均值: {model['cond_mean']:.4f}")
-        print(f"  残差 std: {model['residuals'].std():.4f}")
-
-        # ── 3. 预测次日分布 ───────────────────────────────────────────────────
-        dist = predict_distribution(model)
-        p_up3 = 1 - dist.loc[dist['return'] <= 0.03, 'cdf'].max()
-        p_dn3 = dist.loc[dist['return'] <= -0.03, 'cdf'].max()
-        idx_med = (dist['cdf'] - 0.5).abs().argsort().iloc[0]
-        median = dist.iloc[idx_med]['return']
-        print(f"  P(>+3%): {p_up3:.2%}  |  P(<-3%): {p_dn3:.2%}  |  中位数: {median:.2%}")
-
-        # ── 4. 筹码信息 ───────────────────────────────────────────────────────
-        chip = ds.get(f'{sym}_chip')
-        if chip is not None and not chip.empty:
-            latest = chip.iloc[-1]
-            win = latest.get('获利比例', None)
-            avg = latest.get('平均成本', None)
-            print(f"  筹码(最新 {chip.index[-1].date()}): "
-                  f"获利比例={win:.2%}  平均成本={avg}" if win is not None else "  筹码数据字段异常")
+    """这个预测效果有点后置，第二天的实际值很大程度会偏离预测区间 25概率~75 概率"""

@@ -32,7 +32,7 @@ from limit_tracker import is_main_board, is_non_st, get_trading_days
 
 stock_groups = {
     # 'important': ['600250', '000978','600754'],
-    'important': ['002730'],
+    'important': ['000678'],
     'normal':    [],
 }
 

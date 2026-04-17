@@ -9,17 +9,21 @@ Continuously:
   - Reads user input (non-blocking) and dispatches commands:
       'a'       → feature A: plot today's market breadth (rising / falling / sentiment)
       'b<code>' → feature B: buy suggestion for stock code, e.g. 'b600001'
-      'r'       → feature C (placeholder)
+      'b'       → feature B: batch score all stocks in config/aim.py
+      'c'       → feature C: show sector overview — change % and limit-up count per sector
       'q'       → quit
   - Runs RedMonitor in background: collects market breadth data every 2 min
     before 10:00, every 5 min after 10:00; writes to CSV and in-memory cache.
   - Monitors a watch function in a background task; pops up a dialog
     if an anomaly is detected.
 
-Feature implementations (C) and the anomaly monitor will be filled in later.
 """
 
+
 import asyncio
+import io
+import logging
+import os
 import sys
 import threading
 
@@ -30,6 +34,37 @@ from guass_smoother import AdaptiveForwardGaussianSmoother
 
 # Global monitor shared across features
 _monitor = RedMonitor()
+
+# ───────────────────────── Logger setup ──────────────────────────────────
+
+_LOG_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
+os.makedirs(_LOG_DIR, exist_ok=True)
+
+
+def _get_logger() -> logging.Logger:
+    """Return a logger whose file handler points to today's log file."""
+    import datetime
+    today = datetime.date.today().strftime('%Y-%m-%d')
+    log_path = os.path.join(_LOG_DIR, f'strategy-{today}.log')
+
+    logger = logging.getLogger(f'strategy.{today}')
+    if not logger.handlers:
+        handler = logging.FileHandler(log_path, mode='a', encoding='utf-8')
+        handler.setFormatter(logging.Formatter('%(message)s'))
+        logger.addHandler(handler)
+        logger.setLevel(logging.INFO)
+        logger.propagate = False
+    return logger
+
+
+def _log_feature(tag: str, text: str):
+    """Write each non-empty line as: YYYY-MM-DD HH:MM:SS [TAG] line"""
+    import datetime
+    ts = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    logger = _get_logger()
+    for line in text.splitlines():
+        if line.strip():
+            logger.info('%s [%s] %s', ts, tag, line)
 
 
 # ───────────────────────── Feature A ─────────────────────────────────────
@@ -240,25 +275,107 @@ def _run_feature_b(code: str):
 
 # ───────────────────────── Feature B (async entry) ───────────────────────
 
+def _run_feature_b_batch(aim_codes: dict):
+    """Score all stocks in aim.py and print a ranked summary table."""
+    scorer = StockScorer()
+    SEP  = '═' * 52
+    SEP2 = '─' * 52
+
+    print(f"\n[B] Scoring {len(aim_codes)} stocks from aim.py ...\n")
+    rows = []
+    for code, meta in aim_codes.items():
+        try:
+            result = scorer.score_stock(code)
+            rows.append({
+                'code':  code,
+                'name':  meta.get('name', ''),
+                'total': result['total'],
+                'price': result.get('current_price') or 0.0,
+            })
+            print(f"  {code} {meta.get('name',''):8s}  {result['total']:.1f}")
+        except Exception as e:
+            print(f"  {code} error: {e}")
+
+    rows.sort(key=lambda r: r['total'], reverse=True)
+    print(f"\n{SEP}")
+    print(f"  {'代码':<8} {'名称':<10} {'总分':>6} {'现价':>8}")
+    print(SEP2)
+    for r in rows:
+        print(f"  {r['code']:<8} {r['name']:<10} {r['total']:>6.1f} {r['price']:>8.3f}")
+    print(SEP)
+
+
 async def feature_b(arg: str):
     """
-    Buy suggestion for a stock.
-    arg: 6-digit stock code, e.g. '600001'
+    Buy suggestion for a stock, or batch score all stocks in aim.py.
+    arg: 6-digit stock code, e.g. '600001'; empty → score all from aim.py
     """
+    loop = asyncio.get_event_loop()
+
+    if not arg.strip():
+        import importlib.util, os
+        aim_path = os.path.join(os.path.dirname(__file__), 'config', 'aim.py')
+        spec = importlib.util.spec_from_file_location('aim', aim_path)
+        aim_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(aim_mod)
+        await loop.run_in_executor(None, _run_feature_b_batch, aim_mod.codes)
+        return
+
     code = arg.strip().zfill(6)
     if not code.isdigit() or len(code) != 6:
         print(f"[B] Invalid stock code: {arg!r}  (expected 6 digits, e.g. b600001)")
         return
 
-    loop = asyncio.get_event_loop()
     await loop.run_in_executor(None, _run_feature_b, code)
 
 
-# ───────────────────────── Feature C stub ────────────────────────────────
+# ───────────────────────── Feature C ─────────────────────────────────────
+
+def _run_feature_c():
+    """Synchronous execution of feature C (runs in executor thread)."""
+    import akshare as ak
+    import datetime
+
+    today = datetime.date.today().strftime('%Y%m%d')
+    print("\n[C] 获取板块数据...")
+
+    try:
+        sector_df = ak.stock_board_industry_spot_em()
+    except Exception as e:
+        print(f"[C] 获取板块行情失败: {e}")
+        return
+
+    zt_counts: dict = {}
+    try:
+        zt_df = ak.stock_zt_pool_em(date=today)
+        if '所属行业' in zt_df.columns:
+            zt_counts = zt_df['所属行业'].value_counts().to_dict()
+    except Exception as e:
+        print(f"[C] 获取涨停池失败: {e}")
+
+    if '涨跌幅' not in sector_df.columns or '板块名称' not in sector_df.columns:
+        print("[C] 数据格式异常")
+        return
+
+    sector_df = sector_df.copy()
+    sector_df['涨停数'] = sector_df['板块名称'].map(lambda n: zt_counts.get(n, 0))
+    sector_df = sector_df.sort_values(['涨停数', '涨跌幅'], ascending=[False, False])
+
+    SEP = '─' * 36
+    print(f"\n{'板块':<14} {'涨幅':>6} {'涨停':>4}")
+    print(SEP)
+    for _, row in sector_df.iterrows():
+        name = str(row['板块名称'])
+        chg  = float(row['涨跌幅'])
+        zt   = int(row['涨停数'])
+        print(f"{name:<14} {chg:>6.2f} {zt:>4}")
+    print(SEP)
+
 
 async def feature_c():
-    """Feature C — to be implemented."""
-    print("[C] feature C triggered")
+    """展示板块综合情况：板块涨幅、涨停个股数。"""
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _run_feature_c)
 
 
 # ───────────────────────── Anomaly monitor ───────────────────────────────
@@ -301,17 +418,38 @@ async def dispatch(raw: str):
     cmd = raw.strip()
     if not cmd:
         return
+
+    # Determine feature tag before running
     if cmd == 'a':
-        await feature_a()
-    elif cmd.startswith('b') and len(cmd) > 1:
-        await feature_b(cmd[1:])
-    elif cmd == 'r':
-        await feature_c()
+        tag = 'A'
+    elif cmd.startswith('b'):
+        tag = 'B'
+    elif cmd in ('c', 'r'):
+        tag = 'C'
+    else:
+        tag = None
+
+    if tag:
+        buf = io.StringIO()
+        real_stdout = sys.stdout
+        sys.stdout = buf
+        try:
+            if tag == 'A':
+                await feature_a()
+            elif tag == 'B':
+                await feature_b(cmd[1:])
+            elif tag == 'C':
+                await feature_c()
+        finally:
+            sys.stdout = real_stdout
+            captured = buf.getvalue()
+            print(captured, end='')
+            _log_feature(tag, captured)
     elif cmd == 'q':
         print("Quitting...")
         raise SystemExit(0)
     else:
-        print(f"[Input] unknown command: {cmd!r}  (a / b<code> / r / q)")
+        print(f"[Input] unknown command: {cmd!r}  (a / b<code> / c / q)")
 
 
 # ───────────────────────── Main loop ─────────────────────────────────────
@@ -319,7 +457,7 @@ async def dispatch(raw: str):
 async def main():
     print("=" * 60)
     print("  Jackal system started")
-    print("  Commands:  a | b<code> | r | q (quit)")
+    print("  Commands:  a | b<code> | c | q (quit)")
     print("  Example:   b600001  → buy suggestion for 600001")
     print("=" * 60)
 

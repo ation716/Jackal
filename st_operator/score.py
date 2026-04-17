@@ -438,13 +438,11 @@ class DataFetcher:
     # ── Sector information ─────────────────────────────────────────────────
     def get_sector_name(self, code):
         """Get industry sector name for individual stock"""
-        df = safe_call(
-            ak.stock_individual_basic_info_xq,
-            default=None,
-            sleep_sec=0.5,
-            symbol='SH'+str(code) if str(code).startswith('6') else 'SZ'+str(code),
-        )
-        row = df[df['item'] == 'affiliate_industry']
+        symbol = str(code)+'.SH'  if str(code).startswith('6') else str(code) +'SZ'
+        # df = ak.stock_individual_info_em(code)
+        df = self.analyzer.get_stock_basic(code)
+
+        row = df[df['item'] == '行业']
         if row.empty:
             return None
         return str(row.iloc[0]['value'].get('ind_name'))
@@ -1353,13 +1351,13 @@ if __name__ == '__main__':
     fetcher = scorer.fetcher
 
     print(f"\n{'='*64}")
-    print(f"  调试模式 | 股票: {TEST_CODE}")
+    print(f"  调试模式 | 代码: {TEST_CODE}")
     print(f"{'='*64}\n")
 
     # ── 预加载公共数据（各函数复用）──────────────────────────────
     print(">> 加载公共数据...")
-    hist_df     = fetcher.get_hist(TEST_CODE, days=80)
-    sh_df       = fetcher.get_sh_index(days=80)
+    # hist_df     = fetcher.get_hist(TEST_CODE, days=80)
+    # sh_df       = fetcher.get_sh_index(days=80)
     sector_name = fetcher.get_sector_name(TEST_CODE)
     ts_code     = fetcher.analyzer.normal_ts_code(TEST_CODE)
     _tick       = fetcher.analyzer.get_realtime_tick(ts_code)
@@ -1367,11 +1365,11 @@ if __name__ == '__main__':
                      if _tick is not None and not _tick.empty else None)
     if current_price is not None and np.isnan(current_price):
         current_price = None
-    if current_price is None and not hist_df.empty:
-        current_price = float(hist_df['Close'].iloc[-1])
+    # if current_price is None and not hist_df.empty:
+        # current_price = float(hist_df['Close'].iloc[-1])
     fetcher.get_hot_rank()
     fetcher.get_limit_up_pool()
-    print(f"   hist rows={len(hist_df)}, price={current_price}, sector={sector_name}\n")
+    # print(f"   hist rows={len(hist_df)}, price={current_price}, sector={sector_name}\n")
 
     def _show(name, result):
         score  = result.get('score', '?')
@@ -1389,11 +1387,11 @@ if __name__ == '__main__':
 
     # ── 2. 近期涨幅 ──────────────────────────────────────────────
     print("─── 2. score_recent_change ──────────────────────────────")
-    _show('recent_change', scorer.score_recent_change(hist_df))
+    # _show('recent_change', scorer.score_recent_change(hist_df))
 
     # ── 3. 相对强度 ──────────────────────────────────────────────
     print("─── 3. score_relative_strength ──────────────────────────")
-    _show('relative_strength', scorer.score_relative_strength(hist_df, sh_df, sector_name))
+    # _show('relative_strength', scorer.score_relative_strength(hist_df, sh_df, sector_name))
 
     # ── 4. 资金流向 ──────────────────────────────────────────────
     print("─── 4. score_fund_flow ──────────────────────────────────")
@@ -1405,7 +1403,7 @@ if __name__ == '__main__':
 
     # ── 6. 技术指标 ──────────────────────────────────────────────
     print("─── 6. score_technical ──────────────────────────────────")
-    _show('technical', scorer.score_technical(hist_df))
+    # _show('technical', scorer.score_technical(hist_df))
 
     # ── 7. 热榜排名 ──────────────────────────────────────────────
     print("─── 7. score_hot_rank ───────────────────────────────────")
@@ -1413,15 +1411,15 @@ if __name__ == '__main__':
 
     # ── 8. 封板质量（仅涨停股有效，非涨停返回 0）────────────────
     print("─── 8. score_seal_quality ───────────────────────────────")
-    _show('seal_quality', scorer.score_seal_quality(TEST_CODE, hist_df))
+    # _show('seal_quality', scorer.score_seal_quality(TEST_CODE, hist_df))
 
     # ── 9. 板块强度 ──────────────────────────────────────────────
     print("─── 9. score_sector_strength ────────────────────────────")
-    _show('sector_strength', scorer.score_sector_strength(TEST_CODE, sector_name))
+    # _show('sector_strength', scorer.score_sector_strength(TEST_CODE, sector_name))
 
     # ── 10. 连板层级（仅涨停股有效，非涨停返回 0）───────────────
     print("─── 10. score_consec_limit ──────────────────────────────")
-    _show('consec_limit', scorer.score_consec_limit(TEST_CODE, hist_df))
+    # _show('consec_limit', scorer.score_consec_limit(TEST_CODE, hist_df))
 
     # ── 汇总 ─────────────────────────────────────────────────────
     print(f"{'='*64}")
