@@ -468,6 +468,99 @@ class ChipDistributionAnalyzer:
             df[col] = pd.to_numeric(df[col], errors='coerce')
         return df
 
+    #-------------------------------------板块数据-----------------------------------
+
+    def get_industry_spot(self,symbol:str):
+        """获取板块资金流入"""
+        return ak.stock_board_industry_spot_em(symbol=symbol)
+
+    def get_industry_index_ths(self,symbol,start,end):
+        """
+        通过同花顺获取板块指数 同花顺概念板块
+        ak.stock_board_industry_name_ths() 查看同花顺的所有行业名称
+        开，收，最高，最低，量，额
+        :param symbol:
+        :param start:
+        :param end:
+        :return:
+        """
+        # ak.stock_board_industry_index_ths(symbol="元件", start_date="20240101", end_date="20240718")
+        return ak.stock_board_industry_index_ths(symbol=symbol, start_date=start, end_date=end)
+
+    def get_industry_concept_ths(self,symbol,start,end):
+        """
+        获取同花顺板块概念指数
+        #todo （可以优化源码，返回多个概念）
+        ak.stock_board_concept_name_ths() 查看同花顺的所有概念名称
+        开，收，最高，最低，量，额
+        :param symbol:
+        :param start:
+        :param end:
+        :return:
+        """
+        # ak.stock_board_concept_index_ths(symbol="阿里巴巴概念", start_date="20200101", end_date="20250321")
+        return ak.stock_board_concept_index_ths(symbol,start,end)
+
+    def get_industry_concept_info_ths(self,symbol):
+        """
+        获取同花顺概念板块当日数据
+        开，收，最低，最高，量，涨幅，涨幅排名，涨跌家数，流入，额
+        :param symbol:
+        :return:
+        """
+        # stock_board_concept_info_ths_df = ak.stock_board_concept_info_ths(symbol="阿里巴巴概念")
+        return ak.stock_board_concept_info_ths(symbol=symbol)
+
+    def get_all_industry_info_ths(self):
+        """
+        获取同花顺各个板块的行情数据 非同花顺概念
+        :return:
+        """
+        return ak.stock_board_industry_summary_ths()
+
+    def get_industry_concept_em(self):
+        """
+        获取东方财富概念板块当日数据
+        开，收，最低，最高，量，涨幅，涨幅排名，涨跌家数，流入，额 (还有更多)
+        # 经常获取不到数据
+        :return:
+        """
+        return ak.stock_board_concept_name_em()
+
+    def get_industry_concept_cons_em(self,symbol):
+        """
+        获取东方财富概念成分股
+        :param symbol:
+        :return:
+        """
+        # ak.stock_board_concept_cons_em(symbol="融资融券")
+        return ak.stock_board_concept_cons_em(symbol=symbol)
+
+    def get_industry_concept_hist_em(self,symbol,period,start,end,adjust):
+        """
+        获取东方财富指数历史数据
+        ，收，最低，最高，量，涨幅，成交量，换手率
+        :param symbol:
+        :param period:
+        :param start:
+        :param end:
+        :return:
+        """
+        # ak.stock_board_concept_hist_em(symbol="绿色电力", period="daily", start_date="20220101", end_date="20250227",adjust="")
+        return ak.stock_board_concept_hist_em(symbol=symbol, period=period, start_date=start, end_date="20250227", adjust="")
+
+    def get_industry_concept_tick_em(self,symbol,period):
+        """
+        获取东方财富概念股分时
+         可以通过调用 ak.stock_board_concept_name_em()
+         :param symbol:
+        :param period: 分钟 1，5，15，30，60
+        :return:
+        """
+        # ak.stock_board_concept_hist_min_em(symbol="长寿药", period="1")
+        return ak.stock_board_concept_hist_min_em(symbol=symbol, period=period)
+
+
 
 if __name__ == '__main__':
     analyzer = ChipDistributionAnalyzer()
@@ -475,86 +568,94 @@ if __name__ == '__main__':
     symbol_sz = '000001'
     ts_code_sh = '600000.SH'
     ts_code_sz = '000001.SZ'
-    start = '20240101'
-    end = '20240131'
+    start = '20260401'
+    end = '20260420'
     date = '20240131'
+    #
+    # print("=== normal_ts_code ===")
+    # print(analyzer.normal_ts_code('600000'))   # 600000.SH
+    # print(analyzer.normal_ts_code('000001'))   # 000001.SZ
+    #
+    # print("\n=== get_daily_tu ===")
+    # df = analyzer.get_daily_tu(symbol_sh, start, end)
+    # print(df.head())
 
-    print("=== normal_ts_code ===")
-    print(analyzer.normal_ts_code('600000'))   # 600000.SH
-    print(analyzer.normal_ts_code('000001'))   # 000001.SZ
-
-    print("\n=== get_daily_tu ===")
-    df = analyzer.get_daily_tu(symbol_sh, start, end)
-    print(df.head())
-
-    print("\n=== get_all_pec ===")
-    df = analyzer.get_all_pec(ts_code_sz, start, end)
-    print(df.head())
-
-    print("\n=== get_stock_chip_distribution ===")
-    df = analyzer.get_stock_chip_distribution(symbol_sz, start, end)
-    print(df.head())
-
-    print("\n=== get_stock_chip_akshare ===")
-    df = analyzer.get_stock_chip_akshare(symbol_sz)
-    print(df.head())
-
-    print("\n=== get_stock_chip_distribute_detail ===")
-    df = analyzer.get_stock_chip_distribute_detail(ts_code_sz, start, end)
-    print(df.head())
-
-    print("\n=== get_stock_basic ===")
-    df = analyzer.get_stock_basic(ts_code_sz)
-    print(df)
-
-    print("\n=== get_report_rc ===")
-    df = analyzer.get_report_rc(ts_code_sz, start_date=start, end_date=end)
-    print(df.head())
-
-    print("\n=== get_realtime_tick ===")
-    df = analyzer.get_realtime_tick(ts_code_sz)
-    print(df)
-
-    print("\n=== get_daily_ak ===")
-    df = analyzer.get_daily_ak(symbol_sh, start, end)
-    print(df.head())
-
-    print("\n=== get_daily_limit_up ===")
-    df = analyzer.get_daily_limit_up(date)
-    print(df.head())
-
-    print("\n=== get_main_business_th ===")
-    df = analyzer.get_main_business_th(symbol_sz)
-    print(df.head())
-
-    print("\n=== get_main_business_dc ===")
-    df = analyzer.get_main_business_dc(symbol_sz)
-    print(df.head())
-
-    print("\n=== get_emotion ===")
-    df = analyzer.get_emotion()
-    print(df)
-
-    print("\n=== get_limit_up ===")
-    df = analyzer.get_limit_up(date)
-    print(df.head())
-
-    print("\n=== get_strong ===")
-    df = analyzer.get_strong(date)
-    print(df.head())
-
-    print("\n=== get_price_crush ===")
-    df = analyzer.get_price_crush(date)
-    print(df.head())
-
-    print("\n=== get_limit_down ===")
-    df = analyzer.get_limit_down(date)
-    print(df.head())
-
-    print("\n=== get_daily_jgcyd ===")
-    df = analyzer.get_daily_jgcyd(symbol_sz)
-    print(df.head())
-
-    print("\n=== get_fund ===")
-    df = analyzer.get_fund(symbol_sh)
-    print(df.head())
+    # print("\n=== get_all_pec ===")
+    # df = analyzer.get_all_pec(ts_code_sz, start, end)
+    # print(df.head())
+    #
+    # print("\n=== get_stock_chip_distribution ===")
+    # df = analyzer.get_stock_chip_distribution(symbol_sz, start, end)
+    # print(df.head())
+    #
+    # print("\n=== get_stock_chip_akshare ===")
+    # df = analyzer.get_stock_chip_akshare(symbol_sz)
+    # print(df.head())
+    #
+    # print("\n=== get_stock_chip_distribute_detail ===")
+    # df = analyzer.get_stock_chip_distribute_detail(ts_code_sz, start, end)
+    # print(df.head())
+    #
+    # print("\n=== get_stock_basic ===")
+    # df = analyzer.get_stock_basic(ts_code_sz)
+    # print(df)
+    #
+    # print("\n=== get_report_rc ===")
+    # df = analyzer.get_report_rc(ts_code_sz, start_date=start, end_date=end)
+    # print(df.head())
+    #
+    # print("\n=== get_realtime_tick ===")
+    # df = analyzer.get_realtime_tick(ts_code_sz)
+    # print(df)
+    #
+    # print("\n=== get_daily_ak ===")
+    # df = analyzer.get_daily_ak(symbol_sh, start, end)
+    # print(df.head())
+    #
+    # print("\n=== get_daily_limit_up ===")
+    # df = analyzer.get_daily_limit_up(date)
+    # print(df.head())
+    #
+    # print("\n=== get_main_business_th ===")
+    # df = analyzer.get_main_business_th(symbol_sz)
+    # print(df.head())
+    #
+    # print("\n=== get_main_business_dc ===")
+    # df = analyzer.get_main_business_dc(symbol_sz)
+    # print(df.head())
+    #
+    # print("\n=== get_emotion ===")
+    # df = analyzer.get_emotion()
+    # print(df)
+    #
+    # print("\n=== get_limit_up ===")
+    # df = analyzer.get_limit_up(date)
+    # print(df.head())
+    #
+    # print("\n=== get_strong ===")
+    # df = analyzer.get_strong(date)
+    # print(df.head())
+    #
+    # print("\n=== get_price_crush ===")
+    # df = analyzer.get_price_crush(date)
+    # print(df.head())
+    #
+    # print("\n=== get_limit_down ===")
+    # df = analyzer.get_limit_down(date)
+    # print(df.head())
+    #
+    # print("\n=== get_daily_jgcyd ===")
+    # df = analyzer.get_daily_jgcyd(symbol_sz)
+    # print(df.head())
+    #
+    # print("\n=== get_fund ===")
+    # df = analyzer.get_fund(symbol_sh)
+    # print(df.head())
+    # df=ak.stock_board_concept_name_ths()
+    # _path = os.path.join(os.path.dirname(__file__), '..', 'data','basic','industry_concept')
+    # df.to_csv(f'{_path}', index=False, encoding='utf-8-sig')
+    # df=analyzer.get_industry_concept_ths('储能',start,end)
+    df=analyzer.get_industry_concept_em()
+    # df=analyzer.get_all_industry_info_ths()
+    time.sleep(2)
+    # print
