@@ -28,28 +28,292 @@ LIMIT_COUNT_PRINT_INTERVAL = 60
 LIMIT_SEAL_CHECK_INTERVAL = 5
 BIG_MOVE_WINDOW_SECONDS = 5 * 60
 BIG_MOVE_THRESHOLD_PCT = 2.0
+EXIT_AFTER_CLOSE = False
+ENABLE_POPUP = False
 POPUP_SECONDS = 5
 
 
 stock_groups = {
-    # '人形机器人': {
-    #     '002031': {'name': '巨轮智能', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-    #     '603278': {'name': '大业股份', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-    #     '002050': {'name': '三花智控', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-    #     '600580': {'name': '卧龙电驱', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-    #     '000678': {'name': '襄阳轴承', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-    #     '002896': {'name': '中大力德', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-    #     '000559': {'name': '万向钱潮', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-    # },
-    '电力储能': {
-        '601991': {'name': '大唐发电', 'reasonable_r': [10,18], 'overvalue_r': [18,30], 'imagine_r': []},
-        '600396': {'name': '华电辽能', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-        '600863': {'name': '华能蒙电', 'reasonable_r': [3.32,4.13], 'overvalue_r': [], 'imagine_r': []},
-        '600726': {'name': '华电能源', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-        '601016': {'name': '节能风电', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-        '001896': {'name': '豫能控股', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
-        '600578': {'name': '京能电力', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
+    "宇树科技": {
+        "002472": {
+            "name": "双环传动",
+            "reasonable_r": [30.00, 42.00],
+            "overvalue_r": [42.00, 55.00],
+            "imagine_r": [55.00, 70.00]
+        },
+        "603728": {
+            "name": "鸣志电器",
+            "reasonable_r": [18.00, 28.00],
+            "overvalue_r": [28.00, 40.00],
+            "imagine_r": [40.00, 60.00]
+        },
+        "300503": {
+            "name": "昊志机电",
+            "reasonable_r": [32.00, 45.00],
+            "overvalue_r": [45.00, 60.00],
+            "imagine_r": [60.00, 82.00]
+        },
+        "300115": {
+            "name": "长盈精密",
+            "reasonable_r": [16.00, 22.00],
+            "overvalue_r": [22.00, 30.00],
+            "imagine_r": [30.00, 38.00]
+        },
+        "688322": {
+            "name": "奥比中光-W",
+            "reasonable_r": [35.00, 55.00],
+            "overvalue_r": [55.00, 80.00],
+            "imagine_r": [80.00, 115.00]
+        },
+        "300718": {
+            "name": "长盛轴承",
+            "reasonable_r": [30.00, 45.00],
+            "overvalue_r": [45.00, 62.00],
+            "imagine_r": [62.00, 82.00]
+        },
+        "688017": {
+            "name": "绿的谐波",
+            "reasonable_r": [100.00, 150.00],
+            "overvalue_r": [150.00, 230.00],
+            "imagine_r": [230.00, 360.00]
+        },
+        "002979": {
+            "name": "雷赛智能",
+            "reasonable_r": [26.00, 38.00],
+            "overvalue_r": [38.00, 52.00],
+            "imagine_r": [52.00, 70.00]
+        },
+        "600580": {
+            "name": "卧龙电驱",
+            "reasonable_r": [18.00, 25.00],
+            "overvalue_r": [25.00, 34.00],
+            "imagine_r": [34.00, 45.00]
+        },
+        "002896": {
+            "name": "中大力德",
+            "reasonable_r": [22.00, 35.00],
+            "overvalue_r": [35.00, 50.00],
+            "imagine_r": [50.00, 75.00]
+        },
+        "600143": {
+            "name": "金发科技",
+            "reasonable_r": [9.00, 13.00],
+            "overvalue_r": [13.00, 17.00],
+            "imagine_r": [17.00, 22.00]
+        },
+        "002131": {
+            "name": "利欧股份",
+            "reasonable_r": [1.80, 2.80],
+            "overvalue_r": [2.80, 3.80],
+            "imagine_r": [3.80, 5.20]
+        },
+        "600376": {
+            "name": "首开股份",
+            "reasonable_r": [1.80, 2.80],
+            "overvalue_r": [2.80, 3.60],
+            "imagine_r": [3.60, 4.80]
+        },
+        "300543": {
+            "name": "朗科智能",
+            "reasonable_r": [4.50, 6.20],
+            "overvalue_r": [6.20, 8.00],
+            "imagine_r": [8.00, 10.50]
+        },
+        "002067": {
+            "name": "景兴纸业",
+            "reasonable_r": [2.40, 3.30],
+            "overvalue_r": [3.30, 4.30],
+            "imagine_r": [4.30, 5.50]
+        },
+        "002148": {
+            "name": "北纬科技",
+            "reasonable_r": [3.20, 4.50],
+            "overvalue_r": [4.50, 6.00],
+            "imagine_r": [6.00, 8.00]
+        },
+        "002599": {
+            "name": "盛通股份",
+            "reasonable_r": [3.20, 4.50],
+            "overvalue_r": [4.50, 6.20],
+            "imagine_r": [6.20, 8.50]
+        }
     },
+    '电力储能': {
+        '601991': {'name': '大唐发电', 'reasonable_r': [10,18], 'overvalue_r': [18,30], 'imagine_r': [30,45]},
+        '600396': {'name': '华电辽能', 'reasonable_r': [3.06,4.41], 'overvalue_r': [3.97,6.61], 'imagine_r': [8,16]},
+        '600863': {'name': '华能蒙电', 'reasonable_r': [3.32,4.13], 'overvalue_r': [], 'imagine_r': []},
+        # '600726': {'name': '华电能源', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
+        # '601016': {'name': '节能风电', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
+        # '001896': {'name': '豫能控股', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
+        # '600578': {'name': '京能电力', 'reasonable_r': [], 'overvalue_r': [], 'imagine_r': []},
+    },
+    "智能电网": {
+        "002498": {
+            "name": "汉缆股份",
+            "reasonable_r": [3.80, 5.50],
+            "overvalue_r": [5.50, 7.70],
+            "imagine_r": [7.70, 10.30]
+        },
+        "601616": {
+            "name": "广电电气",
+            "reasonable_r": [2.20, 3.10],
+            "overvalue_r": [3.10, 4.30],
+            "imagine_r": [4.30, 5.80]
+        },
+        "603556": {
+            "name": "海兴电力",
+            "reasonable_r": [25.10, 34.90],
+            "overvalue_r": [34.90, 44.70],
+            "imagine_r": [44.70, 55.80]
+        },
+        "603618": {
+            "name": "杭电股份",
+            "reasonable_r": [8.00, 12.50],
+            "overvalue_r": [12.50, 18.00],
+            "imagine_r": [18.00, 26.00]
+        },
+        "000037": {
+            "name": "深南电A",
+            "reasonable_r": [4.00, 6.20],
+            "overvalue_r": [6.20, 9.30],
+            "imagine_r": [9.30, 13.80]
+        },
+        "600406": {
+            "name": "国电南瑞",
+            "reasonable_r": [22.80, 31.10],
+            "overvalue_r": [31.10, 41.40],
+            "imagine_r": [41.40, 51.80]
+        },
+        "000533": {
+            "name": "顺钠股份",
+            "reasonable_r": [2.60, 4.30],
+            "overvalue_r": [4.30, 6.50],
+            "imagine_r": [6.50, 10.80]
+        },
+        "002300": {
+            "name": "太阳电缆",
+            "reasonable_r": [4.20, 5.80],
+            "overvalue_r": [5.80, 7.20],
+            "imagine_r": [7.20, 9.00]
+        },
+        "002879": {
+            "name": "长缆科技",
+            "reasonable_r": [12.40, 19.20],
+            "overvalue_r": [19.20, 27.50],
+            "imagine_r": [27.50, 37.80]
+        },
+        "002298": {
+            "name": "中电鑫龙",
+            "reasonable_r": [6.00, 7.80],
+            "overvalue_r": [7.80, 9.80],
+            "imagine_r": [9.80, 12.00]
+        }
+    },
+    "存储": {
+        "002409": {
+            "name": "雅克科技",
+            "reasonable_r": [80.00, 110.00],
+            "overvalue_r": [110.00, 145.00],
+            "imagine_r": [145.00, 190.00]
+        },
+        "603936": {
+            "name": "博敏电子",
+            "reasonable_r": [6.00, 9.00],
+            "overvalue_r": [9.00, 12.50],
+            "imagine_r": [12.50, 17.00]
+        },
+        "600667": {
+            "name": "太极实业",
+            "reasonable_r": [6.50, 9.50],
+            "overvalue_r": [9.50, 13.50],
+            "imagine_r": [13.50, 18.50]
+        },
+        "002881": {
+            "name": "美格智能",
+            "reasonable_r": [18.00, 26.00],
+            "overvalue_r": [26.00, 36.00],
+            "imagine_r": [36.00, 48.00]
+        },
+        "000670": {
+            "name": "盈方微",
+            "reasonable_r": [3.00, 4.80],
+            "overvalue_r": [4.80, 6.50],
+            "imagine_r": [6.50, 8.80]
+        },
+        "000021": {
+            "name": "深科技",
+            "reasonable_r": [24.00, 32.00],
+            "overvalue_r": [32.00, 43.00],
+            "imagine_r": [43.00, 55.00]
+        },
+        "002938": {
+            "name": "鹏鼎控股",
+            "reasonable_r": [48.00, 65.00],
+            "overvalue_r": [65.00, 85.00],
+            "imagine_r": [85.00, 105.00]
+        },
+        "603283": {
+            "name": "赛腾股份",
+            "reasonable_r": [30.00, 42.00],
+            "overvalue_r": [42.00, 58.00],
+            "imagine_r": [58.00, 75.00]
+        },
+        "600584": {
+            "name": "长电科技",
+            "reasonable_r": [38.00, 52.00],
+            "overvalue_r": [52.00, 70.00],
+            "imagine_r": [70.00, 90.00]
+        },
+        "001309": {
+            "name": "德明利",
+            "reasonable_r": [250.00, 360.00],
+            "overvalue_r": [360.00, 500.00],
+            "imagine_r": [500.00, 680.00]
+        },
+        "002208": {
+            "name": "合肥城建",
+            "reasonable_r": [4.50, 6.50],
+            "overvalue_r": [6.50, 9.00],
+            "imagine_r": [9.00, 13.00]
+        },
+        "000417": {
+            "name": "合百集团",
+            "reasonable_r": [3.20, 4.50],
+            "overvalue_r": [4.50, 5.80],
+            "imagine_r": [5.80, 7.50]
+        },
+        "603986": {
+            "name": "兆易创新",
+            "reasonable_r": [180.00, 260.00],
+            "overvalue_r": [260.00, 360.00],
+            "imagine_r": [360.00, 500.00]
+        },
+        "301666": {
+            "name": "大普微-U",
+            "reasonable_r": [120.00, 200.00],
+            "overvalue_r": [200.00, 320.00],
+            "imagine_r": [320.00, 500.00]
+        },
+        "002156": {
+            "name": "通富微电",
+            "reasonable_r": [35.00, 48.00],
+            "overvalue_r": [48.00, 65.00],
+            "imagine_r": [65.00, 85.00]
+        },
+        "002371": {
+            "name": "北方华创",
+            "reasonable_r": [450.00, 600.00],
+            "overvalue_r": [600.00, 760.00],
+            "imagine_r": [760.00, 950.00]
+        },
+        "603156": {
+            "name": "养元饮品",
+            "reasonable_r": [20.00, 30.00],
+            "overvalue_r": [30.00, 40.00],
+            "imagine_r": [40.00, 50.00]
+        }
+    },
+
     # '光纤': {
     #     '002491': '通鼎互联',
     #     '600869': '远东股份',
@@ -314,11 +578,26 @@ def popup_alert(title, message, seconds=POPUP_SECONDS):
     threading.Thread(target=job, daemon=True).start()
 
 
+def _english_title(title):
+    mapping = {
+        '合理估值': 'ReasonableValue',
+        '高估': 'OverValue',
+        '想象空间': 'ImagineSpace',
+        '涨停': 'LimitUp',
+        '跌停': 'LimitDown',
+    }
+    return mapping.get(title, title)
+
+
 def emit_event(logger, title, message, popup=False):
-    line = f'[{title}] {message}'
+    out_title = _english_title(title)
+    line = f'[{out_title}] {message}'
     print(line)
-    logger.info('%s | %s', title, message)
     if popup:
+        logger.info('PopupMessage | %s | %s', out_title, message)
+    else:
+        logger.info('%s | %s', out_title, message)
+    if popup and ENABLE_POPUP:
         popup_alert(title, message)
 
 
@@ -529,7 +808,7 @@ def print_groups_bidding(ticks):
     """9:20-9:30：按行业打印买一/卖一"""
     widths = [8, 8, 12, 14, 14]
     for industry, members in stock_groups.items():
-        print(f'[{industry}]')
+        print(f'Industry: {industry}')
         print(_fmt_row(['代码', '价格', '涨幅', '买一(手)', '卖一(手)'], widths))
         for code in members:
             t = ticks.get(code, {})
@@ -676,7 +955,7 @@ def update_big_move_state(ticks, move_history, big_move_active, now, logger):
                 f'区间成交量变化 {vol_delta:.0f}手 '
                 f'[{start_time.strftime("%H:%M:%S")} - {now.strftime("%H:%M:%S")}]'
             )
-            print(f'[大幅变动] {msg}')
+            print(f'[BigMove] {msg}')
             logger.info('大幅变动 | %s', msg)
             big_move_active.add(code)
         elif amplitude <= BIG_MOVE_THRESHOLD_PCT:
@@ -711,7 +990,7 @@ def handle_limit_events(rows, side, seen, seal_state, logger, now_ts):
         pct = diff / prev_seal * 100 if prev_seal else (100.0 if seal else 0.0)
         if prev_seal > 0 and abs(pct) > 5:
             msg = f'{name}({code}) {side_name}封单变化 {diff:+.0f}手 ({pct:+.2f}%), 当前 {seal:.0f}手'
-            print(f'[封单变化] {msg}')
+            print(f'[SealChange] {msg}')
             logger.info('封单变化 | %s', msg)
 
         seal_state[key] = {'seal': seal, 'last_check': now_ts}
@@ -719,10 +998,10 @@ def handle_limit_events(rows, side, seen, seal_state, logger, now_ts):
 
 def print_price_summary(ticks, now):
     widths = [12, 12]
-    print(f'\n[股价摘要] {now.strftime("%H:%M:%S")}')
+    print(f'\n[PriceSummary] {now.strftime("%H:%M:%S")}')
     print(_fmt_row(['名称', '涨幅'], widths))
     for industry, members in stock_groups.items():
-        print(f'[{industry}]')
+        print(f'Industry: {industry}')
         for code in members:
             t = ticks.get(code, {})
             name = _stock_name(code, t.get('name', ''))
@@ -734,7 +1013,7 @@ def print_limit_count(rows, now):
     for row in rows:
         industry_cnt[row.get('industry', '未知') or '未知'] += 1
 
-    print(f'\n[行业涨停] {now.strftime("%H:%M:%S")}')
+    print(f'\n[LimitUpByIndustry] {now.strftime("%H:%M:%S")}')
     print(f'涨停总数: {len(rows)}')
     for industry, count in sorted(industry_cnt.items(), key=lambda x: -x[1]):
         print(f'  {industry:<10} {count}')
@@ -851,6 +1130,7 @@ def run_seeker(period_seconds=3):
 
     last_price_summary = 0.0
     last_limit_count = 0.0
+    close_logged = False
 
     cycle = 0
     while True:
@@ -860,8 +1140,16 @@ def run_seeker(period_seconds=3):
         time_label = now.strftime('%H:%M:%S')
 
         if now.time() > datetime.time(15, 0):
-            print(f'[{time_label}] 收盘，退出')
-            break
+            if EXIT_AFTER_CLOSE:
+                print(f'[MarketClose] {time_label} 收盘，退出')
+                logger.info('收盘 | 退出')
+                break
+            if not close_logged:
+                print(f'[AfterCloseDebug] {time_label} 收盘后继续运行，调试模式不退出')
+                logger.info('收盘 | 继续运行，调试模式不退出')
+                close_logged = True
+        else:
+            close_logged = False
 
         try:
             ticks = get_group_ticks(analyzer)
@@ -902,11 +1190,12 @@ if __name__ == '__main__':
     """
     证券检测系统（周期 3 秒）
       1. stock_groups 使用 name/reasonable_r/overvalue_r/imagine_r 配置。
-      2. 首次进入合理估值、高估、想象空间区间时弹窗并写 logs/seeker-YYYY-MM-DD.log。
+      2. 首次进入合理估值、高估、想象空间区间时打印并写 logs/seeker-YYYY-MM-DD.log。
       3. 5 分钟内振幅超过 2% 时输出大幅变动、方向、变动值和区间成交量变化。
-      4. 刚涨停/跌停弹窗并写日志；每 5 秒检查封单，变化超过 5% 时打印并写日志。
+      4. 刚涨停/跌停打印并写日志；每 5 秒检查封单，变化超过 5% 时打印并写日志。
       5. 每分钟只输出一次 stock_groups 名称和涨幅。
       6. 每分钟按行业统计涨停数量，输出格式参考 st_operator/duanxian.py。
+      7. EXIT_AFTER_CLOSE=False 时，15:00 后继续运行用于调试。
     """
 
 

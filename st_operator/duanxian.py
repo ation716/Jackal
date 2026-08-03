@@ -11,8 +11,9 @@ from limit_tracker import is_main_board, is_non_st, get_trading_days
 
 """
 在原有的基础上，我想监控实时涨停的股票
-只统计主板非ST
-1.需要统计涨停股票的行业，输出各行业涨停数，在 9:40 之前，每 10 s输出一次，之后和平均成交量一起，每 120s输出一次
+只统计非 ST 股票
+1.需要统计涨停股票，每 10 s 查询一次
+输出各行业涨停数，在 9:40 之前，每 10 s 统计一次，之后和平均成交量一起，每 120s输出一次
 格式为
 行业 涨停数
 2.一旦涨停的股票，就写入缓存，持续跟踪，
@@ -32,7 +33,7 @@ from limit_tracker import is_main_board, is_non_st, get_trading_days
 
 stock_groups = {
     # 'important': ['600250', '000978','600754'],
-    'important': ['000678'],
+    'important': ['600379'],
     'normal':    [],
 }
 

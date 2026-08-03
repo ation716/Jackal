@@ -323,13 +323,13 @@ if __name__ == '__main__':
     # df2=df2.iloc[::-1].reset_index(drop=True)
     # df3=df3.iloc[::-1].reset_index(drop=True)
     # combined_df = pd.concat([df2, df3.iloc[:,2:11], df1.iloc[:,11:12]], axis=1)
-    date='20260417'
+    date='20260727'
     start_date='20251127'
     end_date='20251223'
     analyzer = ChipDistributionAnalyzer()
     name='dmgx'
-    fund=analyzer.get_fund('600644')
-    jgcyd=analyzer.get_daily_jgcyd(ts_code)
+    # fund=analyzer.get_fund('600644')
+    # jgcyd=analyzer.get_daily_jgcyd(ts_code)
     # '002632'
     # data=analyzer.get_stock_chip_distribute_detail(ts_code='002632.SZ',start_date=start_date,end_date=end_date)
     # data=analyzer.get_stock_chip_akshare(ts_code='002632')
@@ -340,7 +340,7 @@ if __name__ == '__main__':
     limit_up=analyzer.get_limit_up(date=date)
     # strong=analyzer.get_strong(date=date)
     crush=analyzer.get_price_crush(date=date)
-    # limit_down=analyzer.get_limit_down(date=date)
+    limit_down=analyzer.get_limit_down(date=date)
     # info=analyzer.get_daily_info('全部')
     # info=analyzer.get_all_pec(ts_code,start_date,end_date)
     # info.to_csv('tem2',mode="a", index=False, header=False)

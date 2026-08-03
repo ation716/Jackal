@@ -32,7 +32,7 @@ def _is_main_board(code: str) -> bool:
     """Shanghai 60xxxx or Shenzhen 000/002/003xxxx; excludes STAR/ChiNext/BSE."""
     code = str(code).strip().zfill(6)
     if code.startswith(('688', '689', '300', '301')):
-        return False
+        return True
     if code[0] in ('8', '4'):
         return False
     return code[0] in ('6', '0')

@@ -1,0 +1,164 @@
+{
+    "创新药": {
+        "codes": {
+            "603538": {"name": "美诺华", "5s": 0, "hot": 0, "pioneer": false},
+            "600249": {"name": "两面针", "5s": 0, "hot": 0, "pioneer": false}
+        },
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "苏超": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "机器人": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "固态电池": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "商业航天": {
+        "codes": {
+            "002471": {"name": "中超控股", "5s": 0, "hot": 0, "pioneer": false},
+            "002149": {"name": "西部材料", "5s": 0, "hot": 0, "pioneer": false},
+            "603601": {"name": "再升科技", "5s": 0, "hot": 0, "pioneer": false},
+            "002361": {"name": "神剑股份", "5s": 0, "hot": 0, "pioneer": false}
+        },
+        "history": {"": ""},
+        "predict": {"": ""}
+    },
+    "算力租赁": {
+        "codes": {
+            "000815": {"name": "美利云", "5s": 0, "hot": 0, "pioneer": false},
+            "600666": {"name": "奥瑞德", "5s": 0, "hot": 0, "pioneer": false},
+            "600589": {"name": "大位科技", "5s": 0, "hot": 0, "pioneer": false}
+        },
+        "history": {"": ""},
+        "predict": {"": ""}
+    },
+    "电力": {
+        "codes": {
+            "000720": {"name": "新能泰山", "5s": 0, "hot": 0, "pioneer": false},
+            "600396": {"name": "华电辽能", "5s": 0, "hot": 0, "pioneer": false}
+        },
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "光纤概念": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "半导体": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "油气": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "旅游": {
+        "codes": {
+            "600250": {"name": "南京商旅", "5s": 0, "hot": 0, "pioneer": false},
+            "000978": {"name": "桂林旅游", "5s": 0, "hot": 0, "pioneer": false},
+            "600754": {"name": "锦江酒店", "5s": 0, "hot": 0, "pioneer": false
+            }},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "锂矿": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "农林牧渔": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "液冷": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "军工": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "消费电子": {
+        "codes": {},
+        "history": {
+            "": ""
+        },
+        "predict": {
+            "": ""
+        }
+    },
+    "1": {"codes": {},
+        "history": {
+            "": ""},
+        "predict": {
+            "": ""
+        }
+    }
+}

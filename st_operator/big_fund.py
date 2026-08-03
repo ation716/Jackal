@@ -7,7 +7,13 @@ big_fund.py — Real-time large-order detector for A-share stocks.
 
 Features:
   - Fetches intraday tick data via tushare realtime_tick (sina source).
-  - Classifies orders as "Super-Large" (>= 5000 lots) or "Large" (>= 2000 lots).
+  - Restricts ticks to the 09:30-15:00 trading session.
+  - Price-tiered large-order thresholds (lots):
+      price < 6         -> >= 5000
+      6  <= price < 12  -> >= 3000
+      12 <= price < 24  -> >= 1500
+      24 <= price < 48  -> >= 800
+      price >= 48       -> >= 500
   - Appends each session's large-order details to results/big_fund/{code}.csv.
   - Fields written: time, current change%, price, volume (lots), order type.
   - Calculates and appends the weighted average cost of buy-side large orders.
@@ -20,8 +26,34 @@ import pandas as pd
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'results', 'big_fund')
 TUSHARE_TOKEN = "1bf9b910cdda6f0cd856f55b97c1c1419860237f7be8156aacac3259"
 
-VERY_BIG_ORDER = 5000   # Super-large order threshold (lots)
-BIG_ORDER = 2000        # Large order threshold (lots)
+# Trading session window (Asia/Shanghai)
+SESSION_START = '09:30:00'
+SESSION_END = '15:00:00'
+
+# Price-tiered large-order thresholds. Each tuple: (upper_price_exclusive, min_lots, label).
+# A price falls into the first tier whose upper bound it is strictly less than;
+# the final tier (float('inf')) catches everything else.
+PRICE_TIERS = [
+    (6,             5000, 'Tier-1(<6)'),
+    (12,            3000, 'Tier-2(6-12)'),
+    (24,            1500, 'Tier-3(12-24)'),
+    (48,             800, 'Tier-4(24-48)'),
+    (float('inf'),   500, 'Tier-5(>=48)'),
+]
+
+
+def _tier_for(price: float):
+    """Return the (min_lots, label) tier for *price*."""
+    for upper, min_lots, label in PRICE_TIERS:
+        if price < upper:
+            return min_lots, label
+    # Unreachable — last tier has upper == inf — but keep a safe fallback.
+    return PRICE_TIERS[-1][1], PRICE_TIERS[-1][2]
+
+
+def _big_threshold(price: float) -> int:
+    """Dynamic large-order threshold (lots) keyed by price."""
+    return _tier_for(price)[0]
 
 
 def get_big_orders(ts_code: str, page_count: int = 60):
@@ -50,18 +82,35 @@ def get_big_orders(ts_code: str, page_count: int = 60):
 
     df.dropna(subset=['PRICE', 'VOLUME'], inplace=True)
 
-    # Keep only large orders (>= 2000 lots)
-    big = df[df['VOLUME'] >= BIG_ORDER].copy()
-    if big.empty:
-        print(f"{ts_code}: no large orders found (>= {BIG_ORDER} lots)")
+    # Restrict to the 09:30 - 15:00 trading session
+    time_col_all = 'TIME' if 'TIME' in df.columns else df.columns[0]
+    time_str = df[time_col_all].astype(str).str.strip()
+    df = df[(time_str >= SESSION_START) & (time_str <= SESSION_END)].copy()
+    if df.empty:
+        print(f"{ts_code}: no ticks within {SESSION_START}-{SESSION_END}")
         return
 
-    # Order type: size category + direction
-    def _classify(row):
-        size = 'Super-Large' if row['VOLUME'] >= VERY_BIG_ORDER else 'Large'
-        return f"{size}-{row.get('TYPE', 'Unknown')}"
+    # Print every tick detail first
+    print(f"\n===== {ts_code} all tick details ({len(df)} rows) =====")
+    for _, row in df.iterrows():
+        t = row.get(time_col_all, '')
+        price = row.get('PRICE', '')
+        vol = row.get('VOLUME', '')
+        typ = row.get('TYPE', '')
+        print(f"{t}  price={price}  volume={vol}  type={typ}")
 
-    big['order_type'] = big.apply(_classify, axis=1)
+    # Apply price-dependent large-order threshold per tick
+    df['_threshold'] = df['PRICE'].apply(_big_threshold)
+    big = df[df['VOLUME'] >= df['_threshold']].copy()
+    if big.empty:
+        print(f"\n{ts_code}: no large orders found under dynamic thresholds")
+        return
+
+    # Order type: tier label (by price band) + direction
+    big['order_type'] = big.apply(
+        lambda row: f"{_tier_for(row['PRICE'])[1]}-{row.get('TYPE', 'Unknown')}",
+        axis=1,
+    )
 
     # Current change %: CHANGE / prev_close * 100
     if 'CHANGE' in big.columns:
@@ -76,6 +125,14 @@ def get_big_orders(ts_code: str, page_count: int = 60):
 
     out = big[[time_col, 'change_pct', 'PRICE', 'VOLUME', 'order_type']].copy()
     out.columns = ['time', 'change_pct', 'price', 'volume_lots', 'order_type']
+
+    # Print large orders at the end
+    print(f"\n===== {ts_code} large orders (price-tiered thresholds) =====")
+    for _, row in out.iterrows():
+        print(
+            f"{row['time']}  change={row['change_pct']}  price={row['price']}  "
+            f"volume={row['volume_lots']}  type={row['order_type']}"
+        )
 
     # Append to CSV (write header only on first write)
     os.makedirs(RESULTS_DIR, exist_ok=True)
@@ -100,4 +157,4 @@ def get_big_orders(ts_code: str, page_count: int = 60):
 
 
 if __name__ == '__main__':
-    get_big_orders('600396.SH')
+    get_big_orders('002185.SZ')
