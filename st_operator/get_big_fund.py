@@ -7,6 +7,9 @@
 import re
 import html
 import json
+import datetime
+import math
+from collections import defaultdict
 from html.parser import HTMLParser
 from urllib import parse, request
 
@@ -63,6 +66,7 @@ class _TableParser(HTMLParser):
 
 class SinaBigFundCrawler:
     PRICE_HISTORY_URL = 'https://market.finance.sina.com.cn/iframe/pricehis.php'
+    PRICE_HISTORY_FALLBACK_PAGE_SIZE = 500
     BIG_BILL_API_URL = (
         'https://vip.stock.finance.sina.com.cn/quotes_service/api/json_v2.php'
     )
@@ -92,6 +96,33 @@ class SinaBigFundCrawler:
         if code.startswith(('6', '9')):
             return f'sh{code}'
         return f'sz{code}'
+
+    @staticmethod
+    def _parse_date(value: str) -> datetime.date:
+        return datetime.datetime.strptime(str(value), '%Y-%m-%d').date()
+
+    @classmethod
+    def _iter_dates(cls, startdate: str, enddate: str):
+        start = cls._parse_date(startdate)
+        end = cls._parse_date(enddate)
+        if end < start:
+            raise ValueError('enddate 不能早于 date')
+
+        current = start
+        while current <= end:
+            yield current.strftime('%Y-%m-%d')
+            current += datetime.timedelta(days=1)
+
+    @staticmethod
+    def _to_float(value, default: float = 0.0) -> float:
+        try:
+            return float(str(value).replace(',', '').strip())
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _format_number(value: float) -> str:
+        return str(int(value)) if float(value).is_integer() else f'{value:.2f}'
 
     def build_price_history_url(self, stock_code: str, startdate: str, enddate: str) -> str:
         params = parse.urlencode({
@@ -176,6 +207,56 @@ class SinaBigFundCrawler:
                 return table
         return fallback
 
+    def build_price_history_from_bill_detail(
+            self, stock_code: str, startdate: str, enddate: str) -> list[dict]:
+        """在新浪历史分价页返回空表时，用逐笔成交按价格聚合分价表。"""
+        price_volumes = defaultdict(float)
+
+        for trade_date in self._iter_dates(startdate, enddate):
+            count = self.query_big_bill_count(
+                stock_code=stock_code,
+                date=trade_date,
+                volume=0,
+            )
+            if not count:
+                continue
+
+            page_count = int(math.ceil(count / self.PRICE_HISTORY_FALLBACK_PAGE_SIZE))
+            for page in range(1, page_count + 1):
+                rows = self.query_big_bill_detail(
+                    stock_code=stock_code,
+                    date=trade_date,
+                    num=self.PRICE_HISTORY_FALLBACK_PAGE_SIZE,
+                    page=page,
+                    volume=0,
+                )
+                if not rows:
+                    break
+
+                for row in rows:
+                    price = str(row.get('成交价') or '').strip()
+                    if not price:
+                        continue
+                    volume_lots = self._to_float(row.get('成交量(手)'))
+                    price_volumes[price] += volume_lots * 100
+
+        total_volume = sum(price_volumes.values())
+        if not total_volume:
+            return []
+
+        records = []
+        for price, volume in sorted(
+                price_volumes.items(),
+                key=lambda item: self._to_float(item[0]),
+                reverse=True):
+            records.append({
+                '成交价(元)': price,
+                '成交量(股)': self._format_number(volume),
+                '占比': f'{volume / total_volume * 100:.2f}%',
+                '占比图': '',
+            })
+        return records
+
     def format_big_bill_records(self, rows: list[dict]) -> list[dict]:
         records = []
         for row in rows or []:
@@ -206,7 +287,11 @@ class SinaBigFundCrawler:
         text, _ = self.fetch_html(url)
         tables = self.parse_tables(text)
         table = self.find_price_history_table(tables)
-        return self.table_to_records(table)
+        records = self.table_to_records(table)
+        if records:
+            return records
+        return self.build_price_history_from_bill_detail(
+            stock_code, startdate, enddate)
 
     def query_price_history(self, symbol: str, startdate: str, enddate: str) -> list[dict]:
         """兼容旧入口：查询历史分价表，返回表格记录。"""
@@ -285,3 +370,21 @@ class SinaBigFundCrawler:
             volume=volume,
             lots=lots,
         )
+if __name__ == '__main__':
+    fc=SinaBigFundCrawler()
+    data=fc.query_history_price_table('600613','2026-08-14','2026-08-17')
+    if data:
+        import csv
+
+        # 指定输出文件路径（可自行修改）
+        output_file = 'history_price.csv'
+        # 写入 CSV，使用 utf-8-sig 编码使 Excel 正常显示中文
+        with open(output_file, 'w', newline='', encoding='utf-8-sig') as f:
+            # 从第一条记录获取所有字段名作为表头
+            fieldnames = data[0].keys()
+            writer = csv.DictWriter(f, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(data)
+        print(f"数据已写入 {output_file}，共 {len(data)} 条记录。")
+    else:
+        print("未查询到数据，CSV 文件未生成。")
