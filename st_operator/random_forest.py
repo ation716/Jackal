@@ -461,22 +461,22 @@ if __name__ == '__main__':
     }
     # ts_code = "603122.SH"
     start_date = "20260101"
-    end_date = "20260521"
+    end_date = "20260811"
     analyzer = ChipDistributionAnalyzer()
     counter=0
     for name,ts_code in code_list.items():
 
-        df1 = analyzer.get_daily_ak(ts_code, start_date, end_date)
-        df1 = df1.rename(columns={'换手率': 'turnover_rate'})
+        # df1 = analyzer.get_daily_ak(ts_code, start_date, end_date)
+        # df1 = df1.rename(columns={'换手率': 'turnover_rate'})
         df2 = analyzer.get_stock_chip_distribution(ts_code, start_date, end_date)
         df3 = analyzer.get_daily_tu(ts_code, start_date, end_date)
         df2 = df2.iloc[::-1].reset_index(drop=True)
         df3 = df3.iloc[::-1].reset_index(drop=True)
-        combined_df = pd.concat([df2, df3.iloc[:, 2:11], df1.iloc[:, 11:12]], axis=1)
-        combined_df.to_csv(f'../results/stacks/{name}.csv',
-                  index=False,  # 不保存索引
-                  encoding='utf_8_sig',  # 支持中文
-                  sep=',')  # 分隔符
+        # combined_df = pd.concat([df2, df3.iloc[:, 2:11], df1.iloc[:, 11:12]], axis=1)
+        # combined_df.to_csv(f'../results/stacks/{name}.csv',
+        #           index=False,  # 不保存索引
+        #           encoding='utf_8_sig',  # 支持中文
+        #           sep=',')  # 分隔符
         counter+=1
         if counter % 5 == 0:
             time.sleep(60)

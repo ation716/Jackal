@@ -2,159 +2,419 @@
 # @Time    : 2026/4/2 11:50
 # @Author  : gaolei
 # @FileName: big_fund.py
-"""
-big_fund.py — Real-time large-order detector for A-share stocks.
+# @Software: PyCharm
+"""Large-order report built on SinaBigFundCrawler."""
 
-Features:
-  - Fetches intraday tick data via tushare realtime_tick (sina source).
-  - Restricts ticks to the 09:30-15:00 trading session.
-  - Price-tiered large-order thresholds (lots):
-      price < 6         -> >= 5000
-      6  <= price < 12  -> >= 3000
-      12 <= price < 24  -> >= 1500
-      24 <= price < 48  -> >= 800
-      price >= 48       -> >= 500
-  - Appends each session's large-order details to results/big_fund/{code}.csv.
-  - Fields written: time, current change%, price, volume (lots), order type.
-  - Calculates and appends the weighted average cost of buy-side large orders.
-"""
-
+import csv
+import datetime
+import logging
 import os
-import tushare as ts
-import pandas as pd
+
+try:
+    from st_operator.get_big_fund import SinaBigFundCrawler
+except ModuleNotFoundError:
+    from get_big_fund import SinaBigFundCrawler
+
 
 RESULTS_DIR = os.path.join(os.path.dirname(__file__), '..', 'results', 'big_fund')
-TUSHARE_TOKEN = "1bf9b910cdda6f0cd856f55b97c1c1419860237f7be8156aacac3259"
+PLOT_DIR = os.path.join(RESULTS_DIR, 'plots')
+DEFAULT_PLOT_PATH = os.path.join(PLOT_DIR, 'big_orders.png')
+LOG_DIR = os.path.join(os.path.dirname(__file__), '..', 'logs')
+PAGE_SIZE = 60
+P90_EXCLUDE_TIMES = {'09:25:00', '09:30:00', '15:00:00'}
 
-# Trading session window (Asia/Shanghai)
-SESSION_START = '09:30:00'
-SESSION_END = '15:00:00'
-
-# Price-tiered large-order thresholds. Each tuple: (upper_price_exclusive, min_lots, label).
-# A price falls into the first tier whose upper bound it is strictly less than;
-# the final tier (float('inf')) catches everything else.
 PRICE_TIERS = [
-    (6,             5000, 'Tier-1(<6)'),
-    (12,            3000, 'Tier-2(6-12)'),
-    (24,            1500, 'Tier-3(12-24)'),
-    (48,             800, 'Tier-4(24-48)'),
-    (float('inf'),   500, 'Tier-5(>=48)'),
+    (6, 5000, 'Tier-1(<6)'),
+    (12, 3000, 'Tier-2(6-12)'),
+    (24, 1500, 'Tier-3(12-24)'),
+    (48, 800, 'Tier-4(24-48)'),
+    (float('inf'), 500, 'Tier-5(>=48)'),
+]
+
+CSV_COLUMNS = [
+    'time',
+    'change_pct',
+    'price',
+    'volume_lots',
+    'order_type',
 ]
 
 
+def _get_logger():
+    os.makedirs(LOG_DIR, exist_ok=True)
+    today = datetime.datetime.now().strftime('%Y-%m-%d')
+    log_path = os.path.abspath(os.path.join(LOG_DIR, f'big_fund-{today}.log'))
+    logger = logging.getLogger('big_fund')
+    logger.setLevel(logging.INFO)
+
+    exists = any(
+        isinstance(handler, logging.FileHandler)
+        and handler.baseFilename == log_path
+        for handler in logger.handlers
+    )
+    if not exists:
+        handler = logging.FileHandler(log_path, encoding='utf-8')
+        handler.setFormatter(logging.Formatter('%(asctime)s %(levelname)s %(message)s'))
+        logger.addHandler(handler)
+    return logger
+
+
+def _emit(message: str) -> None:
+    print(message)
+    _get_logger().info(message)
+
+
+def _stock_code(ts_code: str) -> str:
+    return str(ts_code).split('.')[0].strip()
+
+
+def _to_float(value, default: float = 0.0) -> float:
+    try:
+        return float(str(value).replace(',', '').strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def _tier_for(price: float):
-    """Return the (min_lots, label) tier for *price*."""
     for upper, min_lots, label in PRICE_TIERS:
         if price < upper:
             return min_lots, label
-    # Unreachable — last tier has upper == inf — but keep a safe fallback.
     return PRICE_TIERS[-1][1], PRICE_TIERS[-1][2]
 
 
-def _big_threshold(price: float) -> int:
-    """Dynamic large-order threshold (lots) keyed by price."""
-    return _tier_for(price)[0]
+def _format_order(record: dict) -> dict:
+    price = _to_float(record.get('成交价'))
+    volume = _to_float(record.get('成交量(手)'))
+    _, tier_label = _tier_for(price)
+    side = record.get('买卖盘性质') or 'Unknown'
+    return {
+        'time': record.get('发生时间', ''),
+        'change_pct': 'N/A',
+        'price': f'{price:.2f}',
+        'volume_lots': f'{volume:.2f}',
+        'amount_wan': record.get('成交额(万元)', ''),
+        'side': side,
+        'order_type': f'{tier_label}-{side}',
+    }
 
 
-def get_big_orders(ts_code: str, page_count: int = 60):
-    """
-    Fetch large-order ticks for *ts_code* and append them to a per-stock CSV.
+def _filter_by_price_tier(records: list[dict]) -> list[dict]:
+    big_orders = []
+    for record in records:
+        price = _to_float(record.get('成交价'))
+        volume = _to_float(record.get('成交量(手)'))
+        min_lots, _ = _tier_for(price)
+        if volume >= min_lots:
+            big_orders.append(record)
+    return big_orders
 
-    Parameters
-    ----------
-    ts_code    : stock code in tushare format, e.g. '600000.SH'
-    page_count : number of pages to pull from realtime_tick (default 60)
-    """
-    ts.set_token(TUSHARE_TOKEN)
 
-    df = ts.realtime_tick(ts_code=ts_code, src='sina', page_count=page_count)
+def _dedupe_records(records: list[dict]) -> list[dict]:
+    seen = set()
+    unique = []
+    for record in records:
+        key = (
+            record.get('发生时间', ''),
+            record.get('成交价', ''),
+            record.get('成交量(手)', ''),
+            record.get('买卖盘性质', ''),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(record)
+    return unique
 
-    if df is None or len(df) == 0:
-        print(f"{ts_code}: no tick data returned")
+
+def _percentile(values: list[float], q: float) -> float:
+    if not values:
+        return 0.0
+    values = sorted(values)
+    index = (len(values) - 1) * q
+    lower = int(index)
+    upper = min(lower + 1, len(values) - 1)
+    weight = index - lower
+    return values[lower] * (1 - weight) + values[upper] * weight
+
+
+def _is_p90_detail(record: dict, p90_volume: float) -> bool:
+    if record.get('发生时间') in P90_EXCLUDE_TIMES:
+        return False
+    return _to_float(record.get('成交量(手)')) > p90_volume
+
+
+def _side_stats(records: list[dict], side: str) -> dict:
+    side_records = [r for r in records if r.get('买卖盘性质') == side]
+    volumes = [_to_float(r.get('成交量(手)')) for r in side_records]
+    total_volume = sum(volumes)
+    if not total_volume:
+        return {
+            'side': side,
+            'count': 0,
+            'avg_price': None,
+            'avg_volume_lots': None,
+            'p90_volume_lots': None,
+            'p90_records': [],
+        }
+
+    amount = sum(
+        _to_float(r.get('成交价')) * _to_float(r.get('成交量(手)'))
+        for r in side_records
+    )
+    p90_volume = _percentile(volumes, 0.9)
+    return {
+        'side': side,
+        'count': len(side_records),
+        'avg_price': amount / total_volume,
+        'avg_volume_lots': total_volume / len(side_records),
+        'p90_volume_lots': p90_volume,
+        'p90_records': [
+            r for r in side_records
+            if _is_p90_detail(r, p90_volume)
+        ],
+    }
+
+
+def _print_side_stats(ts_code: str, stats: dict) -> None:
+    side = stats['side']
+    if not stats['count']:
+        _emit(f"{ts_code}: no {side} large orders")
         return
 
-    # Normalise column names to upper-case
-    df.columns = [c.upper() for c in df.columns]
-
-    for col in ('PRICE', 'VOLUME', 'CHANGE'):
-        if col in df.columns:
-            df[col] = pd.to_numeric(df[col], errors='coerce')
-
-    df.dropna(subset=['PRICE', 'VOLUME'], inplace=True)
-
-    # Restrict to the 09:30 - 15:00 trading session
-    time_col_all = 'TIME' if 'TIME' in df.columns else df.columns[0]
-    time_str = df[time_col_all].astype(str).str.strip()
-    df = df[(time_str >= SESSION_START) & (time_str <= SESSION_END)].copy()
-    if df.empty:
-        print(f"{ts_code}: no ticks within {SESSION_START}-{SESSION_END}")
-        return
-
-    # Print every tick detail first
-    print(f"\n===== {ts_code} all tick details ({len(df)} rows) =====")
-    for _, row in df.iterrows():
-        t = row.get(time_col_all, '')
-        price = row.get('PRICE', '')
-        vol = row.get('VOLUME', '')
-        typ = row.get('TYPE', '')
-        print(f"{t}  price={price}  volume={vol}  type={typ}")
-
-    # Apply price-dependent large-order threshold per tick
-    df['_threshold'] = df['PRICE'].apply(_big_threshold)
-    big = df[df['VOLUME'] >= df['_threshold']].copy()
-    if big.empty:
-        print(f"\n{ts_code}: no large orders found under dynamic thresholds")
-        return
-
-    # Order type: tier label (by price band) + direction
-    big['order_type'] = big.apply(
-        lambda row: f"{_tier_for(row['PRICE'])[1]}-{row.get('TYPE', 'Unknown')}",
-        axis=1,
+    _emit(
+        f"{ts_code}: {stats['count']} {side} large orders  "
+        f"avg price {stats['avg_price']:.3f}  "
+        f"avg order volume {stats['avg_volume_lots']:.2f} lots  "
+        f"p90 volume {stats['p90_volume_lots']:.2f} lots"
     )
 
-    # Current change %: CHANGE / prev_close * 100
-    if 'CHANGE' in big.columns:
-        prev_close = big['PRICE'] - big['CHANGE']
-        big['change_pct'] = (
-            big['CHANGE'] / prev_close.replace(0, float('nan')) * 100
-        ).round(2).astype(str) + '%'
-    else:
-        big['change_pct'] = 'N/A'
+    if not stats['p90_records']:
+        _emit(
+            f"{ts_code}: no {side} orders above p90 volume "
+            f"(excluded times: {', '.join(sorted(P90_EXCLUDE_TIMES))})"
+        )
+        return
 
-    time_col = 'TIME' if 'TIME' in big.columns else big.columns[0]
-
-    out = big[[time_col, 'change_pct', 'PRICE', 'VOLUME', 'order_type']].copy()
-    out.columns = ['time', 'change_pct', 'price', 'volume_lots', 'order_type']
-
-    # Print large orders at the end
-    print(f"\n===== {ts_code} large orders (price-tiered thresholds) =====")
-    for _, row in out.iterrows():
-        print(
-            f"{row['time']}  change={row['change_pct']}  price={row['price']}  "
-            f"volume={row['volume_lots']}  type={row['order_type']}"
+    _emit(
+        f"===== {ts_code} {side} orders above p90 volume "
+        f"(excluded times: {', '.join(sorted(P90_EXCLUDE_TIMES))}) ====="
+    )
+    for record in stats['p90_records']:
+        row = _format_order(record)
+        _emit(
+            f"{row['time']}  price={row['price']}  "
+            f"volume={row['volume_lots']}  amount={row['amount_wan']}  "
+            f"type={row['order_type']}"
         )
 
-    # Append to CSV (write header only on first write)
-    os.makedirs(RESULTS_DIR, exist_ok=True)
-    stock_code = ts_code.split('.')[0]
-    filepath = os.path.join(RESULTS_DIR, f"{stock_code}.csv")
+
+def _append_csv(filepath: str, rows: list[dict], buy_stats: dict, sell_stats: dict) -> None:
+    os.makedirs(os.path.dirname(filepath), exist_ok=True)
     write_header = not os.path.exists(filepath) or os.path.getsize(filepath) == 0
-    out.to_csv(filepath, mode='a', header=write_header, index=False, encoding='utf-8-sig')
 
-    # Weighted average cost for buy-side orders (buy + neutral)
-    buy_mask = big['TYPE'].isin(['买盘', '中性']) if 'TYPE' in big.columns else pd.Series(True, index=big.index)
-    buy_orders = big[buy_mask]
-    if not buy_orders.empty:
-        total_vol = buy_orders['VOLUME'].sum()
-        avg_cost = (buy_orders['PRICE'] * buy_orders['VOLUME']).sum() / total_vol
-        with open(filepath, 'a', encoding='utf-8-sig') as f:
-            f.write(f"buy_avg_cost,{avg_cost:.3f}\n")
-        print(f"{ts_code}: {len(buy_orders)} buy-side large orders  avg cost {avg_cost:.3f}")
+    with open(filepath, 'a', encoding='utf-8-sig', newline='') as f:
+        writer = csv.DictWriter(f, fieldnames=CSV_COLUMNS, extrasaction='ignore')
+        if write_header:
+            writer.writeheader()
+        writer.writerows(rows)
+        for prefix, stats in (('buy', buy_stats), ('sell', sell_stats)):
+            if stats['avg_price'] is None:
+                continue
+            f.write(f"{prefix}_avg_price,{stats['avg_price']:.3f}\n")
+            f.write(f"{prefix}_avg_volume_lots,{stats['avg_volume_lots']:.2f}\n")
+            f.write(f"{prefix}_p90_volume_lots,{stats['p90_volume_lots']:.2f}\n")
+
+
+def _plot_rows(rows: list[dict]):
+    parsed = []
+    for row in rows:
+        time_text = str(row.get('time', '')).strip()
+        try:
+            tick_time = datetime.datetime.strptime(time_text, '%H:%M:%S')
+        except ValueError:
+            continue
+
+        side = row.get('side', '')
+        if not side:
+            order_type = str(row.get('order_type', ''))
+            if '买盘' in order_type:
+                side = '买盘'
+            elif '卖盘' in order_type:
+                side = '卖盘'
+            else:
+                side = '中性盘'
+
+        parsed.append({
+            'time': tick_time,
+            'time_text': time_text,
+            'price': _to_float(row.get('price')),
+            'volume_lots': _to_float(row.get('volume_lots')),
+            'side': side,
+        })
+
+    parsed.sort(key=lambda item: item['time'])
+    cumulative = 0.0
+    for item in parsed:
+        if item['side'] == '买盘':
+            cumulative += item['volume_lots']
+        elif item['side'] == '卖盘':
+            cumulative -= item['volume_lots']
+        item['net_volume_lots'] = cumulative
+    return parsed
+
+
+def plot_big_orders(rows: list[dict], ts_code: str = '', date=None,
+                    save_path: str = None, show: bool = False) -> str:
+    """绘制大单价格和累积净买量，返回图片路径。
+
+    rows 使用 get_big_orders 的返回值。
+    累积净买量单位为手：买盘加量，卖盘减量，中性盘不改变。
+    """
+    if not rows:
+        raise ValueError('rows 不能为空')
+
+    try:
+        import matplotlib
+        if not show:
+            matplotlib.use('Agg')
+        import matplotlib.dates as mdates
+        import matplotlib.pyplot as plt
+    except ImportError as exc:
+        raise RuntimeError(
+            '绘图需要 matplotlib，请先安装：pip install matplotlib'
+        ) from exc
+
+    plot_data = _plot_rows(rows)
+    if not plot_data:
+        raise ValueError('rows 中没有可绘制的有效时间数据')
+
+    stock_code = _stock_code(ts_code) if ts_code else 'unknown'
+    plot_date = str(date or datetime.datetime.now().strftime('%Y-%m-%d'))
+    if save_path is None:
+        os.makedirs(PLOT_DIR, exist_ok=True)
+        save_path = os.path.join(
+            PLOT_DIR,
+            f'{stock_code}{plot_date}_big_orders.png',
+        )
     else:
-        print(f"{ts_code}: no buy-side large orders")
+        save_path = os.path.abspath(save_path)
+        save_dir = os.path.dirname(save_path)
+        if save_dir:
+            os.makedirs(save_dir, exist_ok=True)
 
-    print(f"{ts_code}: {len(out)} large orders total, appended to {filepath}")
+    times = [item['time'] for item in plot_data]
+    prices = [item['price'] for item in plot_data]
+    net_volumes = [item['net_volume_lots'] for item in plot_data]
+
+    plt.rcParams['font.sans-serif'] = [
+        'Microsoft YaHei', 'SimHei', 'DejaVu Sans'
+    ]
+    plt.rcParams['axes.unicode_minus'] = False
+
+    fig, price_ax = plt.subplots(figsize=(15, 8))
+    net_ax = price_ax.twinx()
+
+    price_line = price_ax.plot(
+        times, prices, color='tab:blue', linewidth=1.8, label='价格'
+    )[0]
+    net_line = net_ax.plot(
+        times, net_volumes, color='tab:red', linewidth=1.8,
+        label='累积净买量(手)'
+    )[0]
+
+    price_ax.set_xlabel('成交时间')
+    price_ax.set_ylabel('价格', color='tab:blue')
+    net_ax.set_ylabel('累积净买量(手)', color='tab:red')
+    price_ax.tick_params(axis='y', labelcolor='tab:blue')
+    net_ax.tick_params(axis='y', labelcolor='tab:red')
+    price_ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M:%S'))
+    price_ax.grid(True, linestyle='--', alpha=0.25)
+    price_ax.set_title(f'{stock_code} 大单价格与累积净买量')
+
+    price_ax.legend(
+        [price_line, net_line],
+        [price_line.get_label(), net_line.get_label()],
+        loc='best',
+    )
+    fig.autofmt_xdate()
+    fig.tight_layout()
+    fig.savefig(save_path, dpi=150, bbox_inches='tight')
+
+    if show:
+        plt.show()
+    plt.close(fig)
+    return save_path
+
+
+def get_big_orders(ts_code: str, page_count: int = 60, date=None,
+                   lots: int = None, plot: bool = False,
+                   plot_path: str = DEFAULT_PLOT_PATH):
+    """查询大单明细，写入 CSV，并计算买盘/卖盘加权平均价格。
+
+    page_count 表示要拉取的页数，最多拉到第 60 页。
+    lots 为空时沿用原价格分档阈值；传入后按固定手数阈值查询。
+    plot 为 True 时，查询完成后同时生成价格/累积净买量图。
+    """
+    crawler = SinaBigFundCrawler()
+    stock_code = _stock_code(ts_code)
+    query_lots = lots or PRICE_TIERS[-1][1]
+
+    page_count = max(1, min(int(page_count or 1), 60))
+    records = []
+    for page in range(1, page_count + 1):
+        page_rows = crawler.query_big_bill_detail(
+            stock_code=stock_code,
+            date=date,
+            num=PAGE_SIZE,
+            page=page,
+            lots=query_lots,
+        )
+        if not page_rows:
+            break
+        records.extend(page_rows)
+
+    records = _dedupe_records(records)
+
+    if not records:
+        _emit(f"{ts_code}: no large orders returned")
+        return []
+
+    big_orders = records if lots is not None else _filter_by_price_tier(records)
+    if not big_orders:
+        _emit(f"{ts_code}: no large orders found under price-tiered thresholds")
+        return []
+
+    rows = [_format_order(record) for record in big_orders]
+
+    _emit(f"\n===== {ts_code} large orders =====")
+    for row in rows:
+        _emit(
+            f"{row['time']}  price={row['price']}  "
+            f"volume={row['volume_lots']}  amount={row['amount_wan']}  "
+            f"type={row['order_type']}"
+        )
+
+    buy_stats = _side_stats(big_orders, '买盘')
+    sell_stats = _side_stats(big_orders, '卖盘')
+
+    filepath = os.path.join(RESULTS_DIR, f"{stock_code}{date or ''}.csv")
+    _append_csv(filepath, rows, buy_stats, sell_stats)
+
+    _print_side_stats(ts_code, buy_stats)
+    _print_side_stats(ts_code, sell_stats)
+
+    _emit(f"{ts_code}: {len(rows)} large orders total, appended to {filepath}")
+    if plot:
+        image_path = plot_big_orders(
+            rows,
+            ts_code=ts_code,
+            date=date,
+            save_path=plot_path,
+        )
+        _emit(f"{ts_code}: plot saved to {image_path}")
+    return rows
 
 
 if __name__ == '__main__':
-    get_big_orders('002185.SZ')
+    # get_big_orders('603330.SH', date='2026-08-19',lots=400,plot=True)
+    get_big_orders('002580.SZ', date='2026-08-13',lots=400,plot=True)

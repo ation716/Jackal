@@ -8,44 +8,35 @@ import csv
 from collections import deque, defaultdict
 from security_data import ChipDistributionAnalyzer
 from limit_tracker import is_main_board, is_non_st, get_trading_days
+try:
+    from stock_groups import stock_groups
+except ImportError:
+    from .stock_groups import stock_groups
 
 """
 在原有的基础上，我想监控实时涨停的股票
 只统计非 ST 股票
-1.需要统计涨停股票，每 10 s 查询一次
-输出各行业涨停数，在 9:40 之前，每 10 s 统计一次，之后和平均成交量一起，每 120s输出一次
-格式为
-行业 涨停数
-2.一旦涨停的股票，就写入缓存，持续跟踪，
-3.在 9:40 之前，输出在 9:31 之前涨停的股票，输出格式（参考 scurity_data get_limit_up）
+1. 每 60s 输出跟踪股票里的行业平均涨幅 Top3
+2. 每 600s 输出所有跟踪股票涨幅；涨停/跌停时展示封单数量，单位手
+3. 一旦涨停的股票，就写入缓存，持续跟踪
+4. 在 9:40 之前，输出在 9:31 之前涨停的股票，输出格式（参考 security_data get_limit_up）
 股票名 涨停时间 当前价 涨停统计 封板资金（万）
-4.最高标开盘，在 9.50 之前，自动加入 important，
+5. 最高标开盘，在 9:50 之前，自动加入 important
 昨日最高标前三名和前日最高标前三名（剔除重合）
-5. 统计炸板，每 5s 检查一次， 输出封单资金迅速减少的股票，与上次相比至少减少了 1/10
+6. 统计炸板，每 5s 检查一次，输出封单资金迅速减少的股票，与上次相比至少减少了 1/10
 """
-
-# ── 输入格式 ──────────────────────────────────────────────────────────────────
-# stock_groups = {
-#     'important': ['600203', '600776'],
-#     'normal':    ['603687', '002309'],
-# }
-# ─────────────────────────────────────────────────────────────────────────────
-
-stock_groups = {
-    # 'important': ['600250', '000978','600754'],
-    'important': ['600379'],
-    'normal':    [],
-}
 
 VOLUME_CHECK_INTERVAL      = 15   # 秒：成交量检测周期
 AVG_VOLUME_PRINT_INTERVAL  = 120  # 秒：平均每分成交量输出周期
-PRICE_PRINT_INTERVAL       = 2    # 秒：价格输出周期
+LOOP_SLEEP_INTERVAL        = 2    # 秒：主循环休眠周期
+INDUSTRY_TOP3_INTERVAL     = 60   # 秒：行业前3涨幅输出周期
+FULL_STOCK_PRINT_INTERVAL  = 600  # 秒：全量涨幅输出周期
 SURGE_THRESHOLD            = 2.5  # 成交量突增倍数阈值
 VOLUME_THRESHOLD           = 100  # 最小成交量阈值（手）
 SPOT_SCAN_INTERVAL_EARLY   = 10   # 9:40前全市场扫描间隔（秒）
 SPOT_SCAN_INTERVAL_LATE    = 30   # 9:40后全市场扫描间隔（秒）
 ZHABAN_CHECK_INTERVAL      = 5    # 炸板检测间隔（秒）
-LIMIT_PRINT_INTERVAL_EARLY = 10   # 9:40前行业涨停统计输出间隔（秒）
+LIMIT_PRINT_INTERVAL_EARLY = 10   # 9:40前早盘涨停列表输出间隔（秒）
 
 
 # ── 板块信息 ──────────────────────────────────────────────────────────────────
@@ -116,6 +107,93 @@ def popup_alert(title: str, msg: str):
         ctypes.windll.user32.MessageBoxW(0, msg, title, 0x40 | 0x1000)
     except Exception:
         print(f"[ALERT] {title}: {msg}")
+
+
+def _safe_float(value, default: float = 0.0) -> float:
+    try:
+        if value is None:
+            return default
+        return float(value)
+    except Exception:
+        return default
+
+
+def _quote_snapshot(row):
+    """Extract code / price / pct_chg / seal info from realtime_quote row."""
+    raw_code = str(row.iloc[1]) if len(row) > 1 else ''
+    code = raw_code.split('.')[0]
+    price = _safe_float(row.iloc[6]) if len(row) > 6 else 0.0
+    pre_close = _safe_float(row.iloc[5]) if len(row) > 5 else 0.0
+    chg = (price - pre_close) / pre_close * 100 if pre_close else 0.0
+    bid_seal = _safe_float(row.iloc[13]) if len(row) > 13 else 0.0
+    ask_seal = _safe_float(row.iloc[23]) if len(row) > 23 else 0.0
+    return code, price, pre_close, chg, bid_seal, ask_seal
+
+
+def _limit_seal_tag(code: str, chg: float, bid_seal: float, ask_seal: float) -> str:
+    limit_pct = get_limit_pct(code)
+    at_thresh = limit_pct * 0.99
+    if chg >= at_thresh:
+        return f"涨停封单:{bid_seal:.0f}手"
+    if chg <= -at_thresh:
+        return f"跌停封单:{ask_seal:.0f}手"
+    return ""
+
+
+def _print_industry_top3(now: datetime.datetime, row_map: dict, tracked_codes: list, codes: dict):
+    industry_map = defaultdict(list)
+    for code in tracked_codes:
+        row = row_map.get(code)
+        if row is None:
+            continue
+        industry = codes.get(code, {}).get('industry', '未知')
+        name = codes.get(code, {}).get('name', code)
+        _, price, _, chg, _, _ = _quote_snapshot(row)
+        industry_map[industry].append({
+            'code': code,
+            'name': name,
+            'price': price,
+            'chg': chg,
+        })
+
+    if not industry_map:
+        return
+
+    ranked = []
+    for industry, items in industry_map.items():
+        avg_chg = sum(item['chg'] for item in items) / len(items)
+        leader = max(items, key=lambda x: x['chg'])
+        ranked.append((avg_chg, industry, len(items), leader))
+
+    ranked.sort(key=lambda x: x[0], reverse=True)
+    print(f"\n[行业Top3] {now.strftime('%H:%M:%S')}")
+    for avg_chg, industry, cnt, leader in ranked[:3]:
+        print(
+            f"  {industry:<12} 平均涨幅 {avg_chg:+.2f}%  "
+            f"{cnt:>2}只  领涨 {leader['name']}({leader['code']}) {leader['chg']:+.2f}%"
+        )
+
+
+def _print_full_stock_report(now: datetime.datetime, row_map: dict, tracked_codes: list, codes: dict):
+    items = []
+    for code in tracked_codes:
+        row = row_map.get(code)
+        if row is None:
+            continue
+        name = codes.get(code, {}).get('name', code)
+        industry = codes.get(code, {}).get('industry', '未知')
+        _, price, _, chg, bid_seal, ask_seal = _quote_snapshot(row)
+        limit_tag = _limit_seal_tag(code, chg, bid_seal, ask_seal)
+        items.append((chg, industry, code, name, price, limit_tag))
+
+    if not items:
+        return
+
+    items.sort(key=lambda x: x[0], reverse=True)
+    print(f"\n[全量涨幅] {now.strftime('%H:%M:%S')}")
+    for chg, industry, code, name, price, limit_tag in items:
+        extra = f"  {limit_tag}" if limit_tag else ""
+        print(f"  {industry:<12} {name}({code})  {price:<8.2f}  {chg:+.2f}%{extra}")
 
 
 # ── 最高连板股 ────────────────────────────────────────────────────────────────
@@ -191,7 +269,7 @@ def scan_limit_up(spot_df, limit_cache: dict, codes: dict,
 
 # ── 主监控逻辑 ────────────────────────────────────────────────────────────────
 def run(groups: dict):
-    all_codes     = groups.get('important', []) + groups.get('normal', [])
+    all_codes     = list(dict.fromkeys(groups.get('important', []) + groups.get('normal', [])))
     important_set = set(groups.get('important', []))
 
     codes = _load_codes()
@@ -206,11 +284,10 @@ def run(groups: dict):
 
     # 时间边界
     middle_early = datetime.datetime.combine(today, datetime.time(9, 14))
-    middle_com   = datetime.datetime.combine(today, datetime.time(9, 45))
     middle_start = datetime.datetime.combine(today, datetime.time(11, 30))
     middle_end   = datetime.datetime.combine(today, datetime.time(13, 0))
     t_931 = datetime.datetime.combine(today, datetime.time(9, 31))
-    t_940 = datetime.datetime.combine(today, datetime.time(22, 40))
+    t_940 = datetime.datetime.combine(today, datetime.time(9, 40))
     t_950 = datetime.datetime.combine(today, datetime.time(9, 50))
 
     # 成交量状态
@@ -224,12 +301,12 @@ def run(groups: dict):
     zhaban_cache     = set()       # 已炸板股票代码集合
     important_inited = False       # 是否已完成最高标自动加入
     tracked_codes    = list(all_codes)  # 动态扩展，含涨停股
-    industry_counts  = {}          # 最新一次扫描结果
     spot_df          = None
 
     last_vol_check    = time.time()
     last_avg_print    = time.time()
-    last_price_print  = time.time()
+    last_industry_print = time.time()
+    last_full_print   = time.time()
     last_spot_scan    = 0.0
     last_limit_print  = 0.0
     last_zhaban_check = 0.0
@@ -276,7 +353,7 @@ def run(groups: dict):
                 try:
                     date_str = today.strftime('%Y%m%d')
                     spot_df = ak.stock_zt_pool_em(date=date_str)
-                    industry_counts, new_codes = scan_limit_up(spot_df, limit_cache, codes, now)
+                    _, new_codes = scan_limit_up(spot_df, limit_cache, codes, now)
                     for c in new_codes:
                         if c not in tracked_codes:
                             tracked_codes.append(c)
@@ -294,7 +371,7 @@ def run(groups: dict):
             df = analyzer.get_realtime_tick(ts_code=symbols)
             if df is None:
                 print("can not get data")
-                time.sleep(PRICE_PRINT_INTERVAL)
+                time.sleep(LOOP_SLEEP_INTERVAL)
                 continue
 
             # 建立 code -> row 映射
@@ -304,54 +381,19 @@ def run(groups: dict):
                 code = raw.split('.')[0]
                 row_map[code] = df.iloc[i]
 
-            # ── 每 2s 按板块输出价格 ──────────────────────────────────────────
-            if t_now - last_price_print >= PRICE_PRINT_INTERVAL:
-                last_price_print = t_now
-                industry_map = defaultdict(list)
-                for code in all_codes:
-                    ind = codes.get(code, {}).get('industry', '未知')
-                    industry_map[ind].append(code)
+            # ── 每 60s 输出行业前3涨幅 ─────────────────────────────────────
+            if t_now - last_industry_print >= INDUSTRY_TOP3_INTERVAL:
+                last_industry_print = t_now
+                _print_industry_top3(now, row_map, tracked_codes, codes)
 
-                print(f"\n{'='*40}  {now.strftime('%H:%M:%S')}")
-                for ind, ind_codes in industry_map.items():
-                    if now < middle_com:
-                        print(f"{ind}:")
-                    for code in ind_codes:
-                        if code not in row_map:
-                            continue
-                        row   = row_map[code]
-                        name  = codes.get(code, {}).get('name', code)
-                        price = row.iloc[6]
-                        pre   = row.iloc[5]
-                        chg   = (price - pre) / pre * 100 if pre else 0
-                        tag   = '-' if code in important_set else ' '
-
-                        limit_pct   = get_limit_pct(code)
-                        near_thresh = limit_pct * 0.95
-                        at_thresh   = limit_pct * 0.99
-                        if chg >= at_thresh:
-                            bid_vol1  = row.iloc[13]
-                            limit_tag = f"  [涨停封单:{bid_vol1:.0f}手]"
-                        elif chg >= near_thresh:
-                            bid_vol1  = row.iloc[13]
-                            limit_tag = f"  (接近涨停 封单:{bid_vol1:.0f}手)"
-                        elif chg <= -at_thresh:
-                            ask_vol1  = row.iloc[23]
-                            limit_tag = f"  [跌停封单:{ask_vol1:.0f}手]"
-                        elif chg <= -near_thresh:
-                            ask_vol1  = row.iloc[23]
-                            limit_tag = f"  (接近跌停 封单:{ask_vol1:.0f}手)"
-                        else:
-                            limit_tag = ""
-                        print(f"  {tag:<2} {mask_name(name):<4}  {price:<5.2f}  {chg:+.2f}{limit_tag}")
+            # ── 每 600s 输出全量涨幅 ───────────────────────────────────────
+            if t_now - last_full_print >= FULL_STOCK_PRINT_INTERVAL:
+                last_full_print = t_now
+                _print_full_stock_report(now, row_map, tracked_codes, codes)
 
             # ── 行业涨停统计（9:40前每10s；9:40后随120s块）────────────────────
             if now < t_940 and t_now - last_limit_print >= LIMIT_PRINT_INTERVAL_EARLY:
                 last_limit_print = t_now
-                if industry_counts:
-                    print(f"\n[行业涨停]  {now.strftime('%H:%M:%S')}")
-                    for ind, cnt in sorted(industry_counts.items(), key=lambda x: -x[1]):
-                        print(f"  {ind:<10} {cnt}")
                 # 9:31前涨停的股票列表
                 early_birds = {c: v for c, v in limit_cache.items()
                                if v['first_time'] < t_931}
@@ -422,7 +464,7 @@ def run(groups: dict):
                                              row.iloc[6], *buy_list, *sel_list, f'surge {ratio:.2f}'])
                             f.flush()
 
-            # ── 每 120s 输出平均每分成交量 + 行业涨停统计（9:40后）────────────
+            # ── 每 120s 输出平均每分成交量 ──────────────────────────────────
             if t_now - last_avg_print >= AVG_VOLUME_PRINT_INTERVAL:
                 last_avg_print = t_now
                 print(f"\n[平均每分成交量]  {now.strftime('%H:%M:%S')}")
@@ -430,15 +472,10 @@ def run(groups: dict):
                     if vol_avg[code] > 0:
                         name = codes.get(code, {}).get('name', code)
                         print(f"  {mask_name(name)}({code})  {vol_avg[code]*4:.0f} 手/分")
-                # 9:40后与此块一起输出行业涨停统计
-                if now >= t_940 and industry_counts:
-                    print(f"\n[行业涨停]  {now.strftime('%H:%M:%S')}")
-                    for ind, cnt in sorted(industry_counts.items(), key=lambda x: -x[1]):
-                        print(f"  {ind:<10} {cnt}")
 
             if now < middle_early:
                 time.sleep(10)
-            time.sleep(PRICE_PRINT_INTERVAL)
+            time.sleep(LOOP_SLEEP_INTERVAL)
 
 
 if __name__ == '__main__':
